@@ -1,13 +1,11 @@
 package com.tetocachy.pvparenasystem;
 
 import com.tetocachy.pvparenasystem.arena.ArenaManager;
-import com.tetocachy.pvparenasystem.command.ArenaCommand;
-import com.tetocachy.pvparenasystem.command.DuelCommand;
-import com.tetocachy.pvparenasystem.command.KitCommand;
-import com.tetocachy.pvparenasystem.command.PartyCommand;
+import com.tetocachy.pvparenasystem.command.*;
 import com.tetocachy.pvparenasystem.event.PlayerEventListener;
 import com.tetocachy.pvparenasystem.kit.KitManager;
 import com.tetocachy.pvparenasystem.match.MatchManager;
+import com.tetocachy.pvparenasystem.network.ModPackets;
 import com.tetocachy.pvparenasystem.player.PlayerStateManager;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -50,6 +48,17 @@ public class PvpArenaSystem implements ModInitializer {
 
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
 			PlayerStateManager.emergencyRestoreAll(server);
+		});
+
+		ModPackets.registerCommon();
+		ModPackets.registerServerReceivers();
+
+		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+			ArenaCommand.register(dispatcher);
+			KitCommand.register(dispatcher);
+			DuelCommand.register(dispatcher);
+			PartyCommand.register(dispatcher);
+			MenuCommand.register(dispatcher); // Registers /pvp and /menu
 		});
 	}
 
