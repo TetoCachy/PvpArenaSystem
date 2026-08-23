@@ -20,6 +20,21 @@ loom {
 			sourceSet sourceSets.client
 		}
 	}
+
+	runs {
+		clientAdmin {
+			client()
+			name "Minecraft Client - Admin"
+			runDir "run/admin"
+			programArgs "--username", "Admin"
+		}
+		clientPlayer {
+			client()
+			name "Minecraft Client - Player"
+			runDir "run/player"
+			programArgs "--username", "Player"
+		}
+	}
 }
 
 dependencies {
