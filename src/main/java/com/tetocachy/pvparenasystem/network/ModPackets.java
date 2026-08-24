@@ -70,7 +70,29 @@ public class ModPackets {
         List<S2CSyncArenaDataPayload.ArenaInfo> arenas = new ArrayList<>();
         for (Arena a : ArenaManager.getAllArenas()) {
             int status = a.isInUse() ? 2 : (a.isConfigured() ? 1 : 0);
-            arenas.add(new S2CSyncArenaDataPayload.ArenaInfo(a.getId(), a.getDisplayName(), status, a.getMaxTeams(), a.getMaxPlayersPerTeam(), a.getAllTeamSpawns().size()));
+            int sx = Math.abs(a.getMaxPos().getX() - a.getMinPos().getX()) + 1;
+            int sy = Math.abs(a.getMaxPos().getY() - a.getMinPos().getY()) + 1;
+            int sz = Math.abs(a.getMaxPos().getZ() - a.getMinPos().getZ()) + 1;
+            String shape = a.getBoundary() != null ? a.getBoundary().getShape().name() : "BOX";
+
+            List<S2CSyncArenaDataPayload.SpawnPointData> spawns = new ArrayList<>();
+            for (Map.Entry<Integer, List<SpawnPoint>> entry : a.getAllTeamSpawns().entrySet()) {
+                for (SpawnPoint sp : entry.getValue()) {
+                    spawns.add(new S2CSyncArenaDataPayload.SpawnPointData(entry.getKey(), sp.getX(), sp.getY(), sp.getZ()));
+                }
+            }
+            if (a.getSpectatorSpawn() != null) {
+                spawns.add(new S2CSyncArenaDataPayload.SpawnPointData(99, a.getSpectatorSpawn().getX(), a.getSpectatorSpawn().getY(), a.getSpectatorSpawn().getZ()));
+            }
+            if (a.getLobbySpawn() != null) {
+                spawns.add(new S2CSyncArenaDataPayload.SpawnPointData(100, a.getLobbySpawn().getX(), a.getLobbySpawn().getY(), a.getLobbySpawn().getZ()));
+            }
+
+            arenas.add(new S2CSyncArenaDataPayload.ArenaInfo(
+                    a.getId(), a.getDisplayName(), status,
+                    a.getMaxSupportedTeams(), a.getMaxPlayersPerTeam(), a.getMaxSupportedTeams(),
+                    a.getSpectatorSpawn() != null, sx, sy, sz, shape, spawns
+            ));
         }
 
         List<S2CSyncArenaDataPayload.LobbyInfo> lobbies = new ArrayList<>();
@@ -166,11 +188,26 @@ public class ModPackets {
             case "REQUEST_SYNC" -> {}
 
             case "LOBBY_CREATE" -> {
-                Arena arena = ArenaManager.getAvailableArena(payload.param1());
-                Kit kit = KitManager.getKit(payload.param2());
                 int teams = Math.max(2, payload.intParam1());
                 int playersPerTeam = Math.max(1, payload.intParam2());
                 int rounds = Math.max(1, payload.intParam3() > 0 ? payload.intParam3() : 3);
+
+                Arena arena = ArenaManager.getAvailableArena(payload.param1(), teams);
+                if (arena == null) {
+                    Arena specific = ArenaManager.getArena(payload.param1());
+                    if (specific != null) {
+                        if (!specific.isConfigured()) {
+                            player.sendSystemMessage(Component.literal("§c[Lobby] Arena '" + specific.getDisplayName() + "' is not fully configured (needs team spawns and spectator spawn)!"), false);
+                        } else if (!specific.supportsTeamCount(teams)) {
+                            player.sendSystemMessage(Component.literal("§c[Lobby] Arena '" + specific.getDisplayName() + "' only supports up to " + specific.getMaxSupportedTeams() + " teams!"), false);
+                        } else if (specific.isInUse()) {
+                            player.sendSystemMessage(Component.literal("§c[Lobby] Arena '" + specific.getDisplayName() + "' is currently in use!"), false);
+                        }
+                        return;
+                    }
+                }
+
+                Kit kit = KitManager.getKit(payload.param2());
                 LobbyManager.createLobby(player, arena, kit, teams, playersPerTeam, rounds);
             }
             case "LOBBY_JOIN" -> {
@@ -210,7 +247,7 @@ public class ModPackets {
             case "PARTY_CREATE" -> PartyManager.createParty(player);
             case "PARTY_RENAME" -> {
                 Party p = PartyManager.getParty(player.getUUID());
-                if (p != null && p.getLeader().equals(player.getUUID()) && !payload.param1().isBlank()) {
+                if (p != null && p.getLeader().equals(player.getUUID())) {
                     p.setName(payload.param1().trim());
                     p.broadcast(server, "§e[Party] Renamed party to '§f" + p.getName() + "§e'!");
                 }
@@ -239,6 +276,37 @@ public class ModPackets {
             }
             case "PARTY_LEAVE" -> PartyManager.leaveParty(player, server);
 
+            case "ADMIN_SET_SPAWN" -> {
+                if (isAdmin && SetupSession.isInSetup(player.getUUID())) {
+                    Arena a = SetupSession.getCurrentEditingArena(player.getUUID());
+                    if (a != null) {
+                        int team = Math.max(1, payload.intParam1());
+                        SpawnPoint sp = SpawnPoint.fromPlayer(player);
+                        a.addTeamSpawn(team, sp);
+                        player.sendSystemMessage(Component.literal("§a[Setup] Spawn for Team " + team + " set at your position!"), false);
+                    }
+                }
+            }
+            case "ADMIN_SET_SPEC" -> {
+                if (isAdmin && SetupSession.isInSetup(player.getUUID())) {
+                    Arena a = SetupSession.getCurrentEditingArena(player.getUUID());
+                    if (a != null) {
+                        SpawnPoint sp = SpawnPoint.fromPlayer(player);
+                        a.setSpectatorSpawn(sp);
+                        player.sendSystemMessage(Component.literal("§a[Setup] Spectator spawn set at your position!"), false);
+                    }
+                }
+            }
+            case "ADMIN_EDIT_ARENA" -> {
+                if (isAdmin) {
+                    Arena arena = ArenaManager.getArena(payload.param1());
+                    if (arena != null) {
+                        SetupSession.startSetup(player, arena);
+                    } else {
+                        player.sendSystemMessage(Component.literal("§c[Admin] Arena not found: " + payload.param1()), false);
+                    }
+                }
+            }
             case "SET_SPAWN_AT_BLOCK" -> {
                 if (isAdmin && SetupSession.isInSetup(player.getUUID())) {
                     Arena a = SetupSession.getCurrentEditingArena(player.getUUID());
@@ -247,13 +315,13 @@ public class ModPackets {
                         SpawnPoint sp = SpawnPoint.fromPlayer(player);
                         if (type == 99) {
                             a.setSpectatorSpawn(sp);
-                            player.sendSystemMessage(Component.literal("§aSpectator spawn set!"), false);
+                            player.sendSystemMessage(Component.literal("§a[Setup] Spectator spawn set!"), false);
                         } else if (type == 100) {
                             a.setLobbySpawn(sp);
-                            player.sendSystemMessage(Component.literal("§aLobby spawn set!"), false);
+                            player.sendSystemMessage(Component.literal("§a[Setup] Lobby spawn set!"), false);
                         } else {
                             a.addTeamSpawn(type, sp);
-                            player.sendSystemMessage(Component.literal("§aSpawn for Team " + type + " added!"), false);
+                            player.sendSystemMessage(Component.literal("§a[Setup] Spawn for Team " + type + " added!"), false);
                         }
                     }
                 }

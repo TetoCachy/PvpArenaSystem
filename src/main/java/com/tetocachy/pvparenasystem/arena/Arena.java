@@ -33,7 +33,30 @@ public class Arena {
     }
 
     public boolean isConfigured() {
-        return teamSpawns.size() >= 2 && spectatorSpawn != null;
+        return getMaxSupportedTeams() >= 2 && spectatorSpawn != null;
+    }
+
+    /**
+     * Returns true if every team from 1 to count has at least one spawn point configured.
+     */
+    public boolean supportsTeamCount(int count) {
+        if (count < 2) return false;
+        return count <= getMaxSupportedTeams();
+    }
+
+    /**
+     * Calculates the maximum consecutive teams configured with spawn points.
+     */
+    public int getMaxSupportedTeams() {
+        int count = 0;
+        while (true) {
+            List<SpawnPoint> spawns = teamSpawns.get(count + 1);
+            if (spawns == null || spawns.isEmpty()) {
+                break;
+            }
+            count++;
+        }
+        return count;
     }
 
     public boolean isInsideBoundary(double x, double y, double z) {
@@ -54,6 +77,9 @@ public class Arena {
 
     public void addTeamSpawn(int teamIndex, SpawnPoint spawn) {
         teamSpawns.computeIfAbsent(teamIndex, k -> new ArrayList<>()).add(spawn);
+        if (teamIndex > maxTeams) {
+            maxTeams = teamIndex;
+        }
     }
 
     public void clearTeamSpawns(int teamIndex) {
@@ -81,7 +107,7 @@ public class Arena {
         JsonObject obj = new JsonObject();
         obj.addProperty("id", id);
         obj.addProperty("displayName", displayName);
-        obj.addProperty("maxTeams", maxTeams);
+        obj.addProperty("maxTeams", getMaxSupportedTeams());
         obj.addProperty("maxPlayersPerTeam", maxPlayersPerTeam);
 
         JsonObject min = new JsonObject();

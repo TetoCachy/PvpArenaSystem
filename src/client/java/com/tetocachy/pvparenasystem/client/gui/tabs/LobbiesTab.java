@@ -14,6 +14,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -77,7 +78,6 @@ public class LobbiesTab implements ArenaScreenTab {
                 }).bounds(x + width - 24, y + 2, 18, 18).build());
             }
 
-            // Render Exactly Matching Visible Team Switch Buttons
             for (int col = 0; col < visibleTeamsCount; col++) {
                 int teamListIdx = teamScrollIndex + col;
                 if (teamListIdx >= totalTeams) break;
@@ -91,7 +91,6 @@ public class LobbiesTab implements ArenaScreenTab {
                 addWidget.accept(switchBtn);
             }
 
-            // Spectator toggle button
             addWidget.accept(Button.builder(Component.literal("👁 Become Spectator"), b -> {
                 ClientPlayNetworking.send(new C2SActionPayload("LOBBY_BECOME_SPECTATOR", "", "", 0, 0));
             }).bounds(x + 4, y + height - 70, width - 8, 18).build());
@@ -115,21 +114,41 @@ public class LobbiesTab implements ArenaScreenTab {
             // LOBBY BROWSER & CREATION
             boolean isPartyMemberNotLeader = data.party().inParty() && !data.party().isLeader();
 
-            List<S2CSyncArenaDataPayload.ArenaInfo> arenas = data.arenas();
-            String curArena = arenas.isEmpty() ? "Any Arena" : arenas.get(Math.min(selectedArenaIndex, arenas.size() - 1)).displayName();
+            // Filter arenas by team size support (Point 5)
+            List<S2CSyncArenaDataPayload.ArenaInfo> compatibleArenas = new ArrayList<>();
+            for (S2CSyncArenaDataPayload.ArenaInfo a : data.arenas()) {
+                if (a.maxTeams() >= teamCount || a.teamSpawnCount() >= teamCount) {
+                    compatibleArenas.add(a);
+                }
+            }
+
+            if (selectedArenaIndex >= compatibleArenas.size()) {
+                selectedArenaIndex = 0;
+            }
+
+            String curArena;
+            if (compatibleArenas.isEmpty()) {
+                curArena = "§cNo Map for " + teamCount + "T";
+            } else {
+                curArena = "§e" + compatibleArenas.get(selectedArenaIndex).displayName();
+            }
 
             List<S2CSyncArenaDataPayload.KitInfo> kits = data.kits();
-            String curKit = kits.isEmpty() ? "Default Kit" : kits.get(Math.min(selectedKitIndex, kits.size() - 1)).displayName();
+            String curKit = kits.isEmpty() ? "Default Kit" : kits.get(Math.min(selectedKitIndex, Math.max(0, kits.size() - 1))).displayName();
 
             int colW = (width - 12) / 2;
 
-            addWidget.accept(Button.builder(Component.literal("Map: §e" + curArena), b -> {
-                if (!arenas.isEmpty()) {
-                    selectedArenaIndex = (selectedArenaIndex + 1) % arenas.size();
-                    b.setMessage(Component.literal("Map: §e" + arenas.get(selectedArenaIndex).displayName()));
+            // Arena Selector Button
+            Button arenaBtn = Button.builder(Component.literal("Map: " + curArena), b -> {
+                if (!compatibleArenas.isEmpty()) {
+                    selectedArenaIndex = (selectedArenaIndex + 1) % compatibleArenas.size();
+                    b.setMessage(Component.literal("Map: §e" + compatibleArenas.get(selectedArenaIndex).displayName()));
                 }
-            }).bounds(x + 4, y + 2, colW, 18).build());
+            }).bounds(x + 4, y + 2, colW, 18).build();
+            arenaBtn.active = !compatibleArenas.isEmpty();
+            addWidget.accept(arenaBtn);
 
+            // Kit Selector Button
             addWidget.accept(Button.builder(Component.literal("Kit: §b" + curKit), b -> {
                 if (!kits.isEmpty()) {
                     selectedKitIndex = (selectedKitIndex + 1) % kits.size();
@@ -139,9 +158,11 @@ public class LobbiesTab implements ArenaScreenTab {
 
             int thirdW = (width - 16) / 3;
 
+            // Teams Count Button (Cycles 2 -> 8, auto-refreshes valid map pool)
             addWidget.accept(Button.builder(Component.literal("Teams: §a" + teamCount), b -> {
                 teamCount = teamCount >= 8 ? 2 : teamCount + 1;
-                b.setMessage(Component.literal("Teams: §a" + teamCount));
+                selectedArenaIndex = 0;
+                parentScreen.rebuildTabContent();
             }).bounds(x + 4, y + 22, thirdW, 18).build());
 
             addWidget.accept(Button.builder(Component.literal("Per Team: §a" + playersPerTeam), b -> {
@@ -158,9 +179,13 @@ public class LobbiesTab implements ArenaScreenTab {
                 Button lockedCreate = Button.builder(Component.literal("§c🔒 Only Party Leader Can Host"), b -> {}).bounds(x + 4, y + 43, width - 8, 20).build();
                 lockedCreate.active = false;
                 addWidget.accept(lockedCreate);
+            } else if (compatibleArenas.isEmpty()) {
+                Button noArenaCreate = Button.builder(Component.literal("§c✕ No Arena Supports " + teamCount + " Teams"), b -> {}).bounds(x + 4, y + 43, width - 8, 20).build();
+                noArenaCreate.active = false;
+                addWidget.accept(noArenaCreate);
             } else {
                 addWidget.accept(Button.builder(Component.literal("§a§l+ CREATE & OPEN LOBBY"), b -> {
-                    String aId = arenas.isEmpty() ? "" : arenas.get(Math.min(selectedArenaIndex, arenas.size() - 1)).id();
+                    String aId = compatibleArenas.get(selectedArenaIndex).id();
                     String kId = kits.isEmpty() ? "" : kits.get(Math.min(selectedKitIndex, kits.size() - 1)).id();
                     ClientPlayNetworking.send(new C2SActionPayload("LOBBY_CREATE", aId, kId, teamCount, playersPerTeam, rounds));
                 }).bounds(x + 4, y + 43, width - 8, 20).build());
@@ -265,7 +290,6 @@ public class LobbiesTab implements ArenaScreenTab {
             int visibleTeamsCount = Math.min(3, totalTeams);
             int cardW = (viewW - ((visibleTeamsCount - 1) * gap)) / visibleTeamsCount;
 
-            // Lobby Header
             graphics.fill(contentX + 4, contentY + 2, contentX + contentW - 4, contentY + 20, 0xF0161820);
             graphics.outline(contentX + 4, contentY + 2, contentW - 8, 18, 0xFF4A4E5C);
 

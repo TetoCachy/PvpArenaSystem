@@ -27,8 +27,22 @@ public record S2CSyncArenaDataPayload(
 ) implements CustomPacketPayload {
     public static final Type<S2CSyncArenaDataPayload> TYPE = new Type<>(PvpArenaSystem.id("s2c_sync_arena_data"));
 
+    public record SpawnPointData(int teamIndex, double x, double y, double z) {}
     public record KitInfo(String id, String displayName, List<ItemStack> previewItems) {}
-    public record ArenaInfo(String id, String displayName, int status, int maxTeams, int maxPlayersPerTeam, int teamSpawnCount) {}
+    public record ArenaInfo(
+            String id,
+            String displayName,
+            int status,
+            int maxTeams,
+            int maxPlayersPerTeam,
+            int teamSpawnCount,
+            boolean hasSpectatorSpawn,
+            int sizeX,
+            int sizeY,
+            int sizeZ,
+            String borderShape,
+            List<SpawnPointData> spawns
+    ) {}
     public record LobbyInfo(String lobbyId, String hostName, String arenaName, String kitName, int teamCount, int playersPerTeam, int rounds, List<TeamSlotInfo> teams, List<String> spectatorNames) {}
     public record TeamSlotInfo(int teamIndex, List<String> memberNames) {}
     public record PartyInfo(boolean inParty, boolean isLeader, boolean isPublic, String partyName, String leaderName, int maxMembers, List<String> members) {}
@@ -39,7 +53,7 @@ public record S2CSyncArenaDataPayload(
             (buf, p) -> {
                 buf.writeBoolean(p.isAdmin());
                 buf.writeBoolean(p.inSetup());
-                buf.writeUtf(p.editingArenaId());
+                buf.writeUtf(p.editingArenaId() != null ? p.editingArenaId() : "");
 
                 buf.writeBoolean(p.pos1() != null);
                 if (p.pos1() != null) buf.writeBlockPos(p.pos1());
@@ -67,6 +81,18 @@ public record S2CSyncArenaDataPayload(
                     buf.writeInt(a.maxTeams());
                     buf.writeInt(a.maxPlayersPerTeam());
                     buf.writeInt(a.teamSpawnCount());
+                    buf.writeBoolean(a.hasSpectatorSpawn());
+                    buf.writeInt(a.sizeX());
+                    buf.writeInt(a.sizeY());
+                    buf.writeInt(a.sizeZ());
+                    buf.writeUtf(a.borderShape() != null ? a.borderShape() : "BOX");
+                    buf.writeInt(a.spawns().size());
+                    for (SpawnPointData sp : a.spawns()) {
+                        buf.writeInt(sp.teamIndex());
+                        buf.writeDouble(sp.x());
+                        buf.writeDouble(sp.y());
+                        buf.writeDouble(sp.z());
+                    }
                 }
 
                 buf.writeInt(p.lobbies().size());
@@ -131,7 +157,25 @@ public record S2CSyncArenaDataPayload(
                 int aCount = buf.readInt();
                 List<ArenaInfo> arenas = new ArrayList<>(aCount);
                 for (int i = 0; i < aCount; i++) {
-                    arenas.add(new ArenaInfo(buf.readUtf(), buf.readUtf(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt()));
+                    String aId = buf.readUtf();
+                    String aName = buf.readUtf();
+                    int status = buf.readInt();
+                    int maxTeams = buf.readInt();
+                    int maxPpt = buf.readInt();
+                    int teamSpawns = buf.readInt();
+                    boolean hasSpec = buf.readBoolean();
+                    int sx = buf.readInt();
+                    int sy = buf.readInt();
+                    int sz = buf.readInt();
+                    String borderShape = buf.readUtf();
+
+                    int spawnCount = buf.readInt();
+                    List<SpawnPointData> spawns = new ArrayList<>(spawnCount);
+                    for (int j = 0; j < spawnCount; j++) {
+                        spawns.add(new SpawnPointData(buf.readInt(), buf.readDouble(), buf.readDouble(), buf.readDouble()));
+                    }
+
+                    arenas.add(new ArenaInfo(aId, aName, status, maxTeams, maxPpt, teamSpawns, hasSpec, sx, sy, sz, borderShape, spawns));
                 }
 
                 int lCount = buf.readInt();

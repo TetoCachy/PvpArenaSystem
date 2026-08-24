@@ -73,7 +73,6 @@ public class ArenaManager {
         int sizeY = max.getY() - min.getY() + 1;
         int sizeZ = max.getZ() - min.getZ() + 1;
 
-        // Allocate isolated plot in Arena Dimension
         int targetOffsetX = arenaOffsetIndex * 500;
         int targetOffsetY = 64;
         int targetOffsetZ = 0;
@@ -83,7 +82,6 @@ public class ArenaManager {
         BlockPos targetMin = new BlockPos(targetOffsetX, targetOffsetY - 1, targetOffsetZ);
         BlockPos targetMax = new BlockPos(targetOffsetX + sizeX - 1, targetOffsetY + sizeY - 1, targetOffsetZ + sizeZ - 1);
 
-        // Copy blocks & generate bedrock under non-air columns only
         for (int x = 0; x < sizeX; x++) {
             for (int z = 0; z < sizeZ; z++) {
                 boolean hasNonAirBlock = false;
@@ -97,7 +95,6 @@ public class ArenaManager {
                     }
                 }
 
-                // Place bedrock under blocks, leave void/air otherwise
                 BlockPos bedrockPos = new BlockPos(targetOffsetX + x, targetOffsetY - 1, targetOffsetZ + z);
                 if (hasNonAirBlock) {
                     arenaLevel.setBlock(bedrockPos, Blocks.BEDROCK.defaultBlockState(), 2);
@@ -118,12 +115,16 @@ public class ArenaManager {
     }
 
     public static Arena getAvailableArena(String preferred) {
+        return getAvailableArena(preferred, 2);
+    }
+
+    public static Arena getAvailableArena(String preferred, int requiredTeams) {
         if (preferred != null && arenas.containsKey(preferred.toLowerCase())) {
             Arena a = arenas.get(preferred.toLowerCase());
-            if (!a.isInUse() && a.isConfigured()) return a;
+            if (!a.isInUse() && a.isConfigured() && a.supportsTeamCount(requiredTeams)) return a;
         }
         for (Arena a : arenas.values()) {
-            if (!a.isInUse() && a.isConfigured()) return a;
+            if (!a.isInUse() && a.isConfigured() && a.supportsTeamCount(requiredTeams)) return a;
         }
         return null;
     }

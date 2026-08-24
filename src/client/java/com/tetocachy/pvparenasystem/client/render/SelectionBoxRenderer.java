@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.tetocachy.pvparenasystem.client.data.ClientArenaCache;
 import com.tetocachy.pvparenasystem.config.ArenaModConfig;
+import com.tetocachy.pvparenasystem.network.S2CSyncArenaDataPayload;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
@@ -19,6 +20,42 @@ public class SelectionBoxRenderer {
             Minecraft mc = Minecraft.getInstance();
             if (mc.player == null) return;
 
+            PoseStack poseStack = context.poseStack();
+            final Vec3 camPos = mc.gameRenderer.mainCamera().position();
+
+            // 1. Render Spawn Point Highlights in World during Setup Mode
+            if (ClientArenaCache.hasData() && ClientArenaCache.currentData != null && ClientArenaCache.currentData.inSetup()) {
+                String editingId = ClientArenaCache.currentData.editingArenaId();
+                S2CSyncArenaDataPayload.ArenaInfo editingArena = null;
+                for (S2CSyncArenaDataPayload.ArenaInfo a : ClientArenaCache.currentData.arenas()) {
+                    if (a.id().equalsIgnoreCase(editingId)) {
+                        editingArena = a;
+                        break;
+                    }
+                }
+
+                if (editingArena != null) {
+                    for (S2CSyncArenaDataPayload.SpawnPointData sp : editingArena.spawns()) {
+                        float[] rgb = getTeamColor(sp.teamIndex());
+                        double minX = Math.floor(sp.x()) - camPos.x;
+                        double minY = Math.floor(sp.y()) - camPos.y;
+                        double minZ = Math.floor(sp.z()) - camPos.z;
+                        double maxX = minX + 1.0;
+                        double maxY = minY + 1.0;
+                        double maxZ = minZ + 1.0;
+
+                        context.submitNodeCollector().submitCustomGeometry(poseStack, RenderTypes.debugFilledBox(), (pose, buffer) -> {
+                            renderFilledBox(pose, buffer, minX, minY, minZ, maxX, maxY, maxZ, rgb[0], rgb[1], rgb[2], 0.35F);
+                        });
+
+                        context.submitNodeCollector().submitCustomGeometry(poseStack, RenderTypes.lines(), (pose, buffer) -> {
+                            renderBoxLines(pose, buffer, minX, minY, minZ, maxX, maxY, maxZ, rgb[0], rgb[1], rgb[2], 1.0F);
+                        });
+                    }
+                }
+            }
+
+            // 2. Selection Wand Bounding Box Preview
             BlockPos startPos = null;
             BlockPos endPos = null;
             if (ClientArenaCache.hasData() && ClientArenaCache.currentData != null) {
@@ -66,8 +103,6 @@ public class SelectionBoxRenderer {
 
             final boolean isLivePreview = livePreview;
             final BlockPos anchorPos = startPos;
-            final Vec3 camPos = mc.gameRenderer.mainCamera().position();
-            PoseStack poseStack = context.poseStack();
 
             int minBlockX = Math.min(resolvedP1.getX(), resolvedP2.getX());
             int minBlockY = Math.min(resolvedP1.getY(), resolvedP2.getY());
@@ -85,23 +120,17 @@ public class SelectionBoxRenderer {
             final double maxY = maxBlockY + 1.0 - camPos.y;
             final double maxZ = maxBlockZ + 1.0 - camPos.z;
 
-            // Colors:
-            // Preview: Warm Amber/Yellow (r=1.0, g=0.85, b=0.2)
-            // Confirmed Selection: Bright Neon Cyan (r=0.0, g=1.0, b=1.0)
             final float r = isLivePreview ? 1.0F : 0.0F;
             final float g = isLivePreview ? 0.85F : 1.0F;
             final float b = isLivePreview ? 0.2F : 1.0F;
 
-            // 1. Render See-Through Translucent Volume Fill
             context.submitNodeCollector().submitCustomGeometry(poseStack, RenderTypes.debugFilledBox(), (pose, buffer) -> {
                 renderFilledBox(pose, buffer, minX, minY, minZ, maxX, maxY, maxZ, r, g, b, 0.20F);
             });
 
-            // 2. Render Wireframe Line Box
             context.submitNodeCollector().submitCustomGeometry(poseStack, RenderTypes.lines(), (pose, buffer) -> {
                 renderBoxLines(pose, buffer, minX, minY, minZ, maxX, maxY, maxZ, r, g, b, isLivePreview ? 0.85F : 1.0F);
 
-                // Highlight Pos 1 Anchor with an orange outline if in live preview mode
                 if (isLivePreview && anchorPos != null) {
                     double aMinX = anchorPos.getX() - camPos.x;
                     double aMinY = anchorPos.getY() - camPos.y;
@@ -112,18 +141,32 @@ public class SelectionBoxRenderer {
         });
     }
 
+    /**
+     * Golden-ratio HSV color generator to provide distinct colors for infinite teams.
+     */
+    private static float[] getTeamColor(int teamIndex) {
+        if (teamIndex == 99) return new float[]{0.8F, 0.3F, 1.0F}; // Spectator: Lavender
+        if (teamIndex == 100) return new float[]{0.2F, 1.0F, 0.4F}; // Lobby: Emerald
+        if (teamIndex == 1) return new float[]{1.0F, 0.2F, 0.2F}; // Team 1: Crimson Red
+        if (teamIndex == 2) return new float[]{0.2F, 0.5F, 1.0F}; // Team 2: Royal Blue
+        if (teamIndex == 3) return new float[]{0.2F, 0.9F, 0.3F}; // Team 3: Lime Green
+        if (teamIndex == 4) return new float[]{1.0F, 0.85F, 0.1F}; // Team 4: Gold
+
+        float hue = ((teamIndex - 1) * 0.618033988749895f) % 1.0f;
+        int rgb = java.awt.Color.HSBtoRGB(hue, 0.85f, 1.0f);
+        return new float[]{
+                ((rgb >> 16) & 0xFF) / 255.0F,
+                ((rgb >> 8) & 0xFF) / 255.0F,
+                (rgb & 0xFF) / 255.0F
+        };
+    }
+
     private static void renderFilledBox(PoseStack.Pose pose, VertexConsumer buffer, double minX, double minY, double minZ, double maxX, double maxY, double maxZ, float r, float g, float b, float a) {
-        // Bottom (Y-)
         quad(buffer, pose, minX, minY, minZ, maxX, minY, minZ, maxX, minY, maxZ, minX, minY, maxZ, r, g, b, a);
-        // Top (Y+)
         quad(buffer, pose, minX, maxY, minZ, minX, maxY, maxZ, maxX, maxY, maxZ, maxX, maxY, minZ, r, g, b, a);
-        // North (Z-)
         quad(buffer, pose, minX, minY, minZ, minX, maxY, minZ, maxX, maxY, minZ, maxX, minY, minZ, r, g, b, a);
-        // South (Z+)
         quad(buffer, pose, maxX, minY, maxZ, maxX, maxY, maxZ, minX, maxY, maxZ, minX, minY, maxZ, r, g, b, a);
-        // West (X-)
         quad(buffer, pose, minX, minY, maxZ, minX, maxY, maxZ, minX, maxY, minZ, minX, minY, minZ, r, g, b, a);
-        // East (X+)
         quad(buffer, pose, maxX, minY, minZ, maxX, maxY, minZ, maxX, maxY, maxZ, maxX, minY, maxZ, r, g, b, a);
     }
 
@@ -135,17 +178,16 @@ public class SelectionBoxRenderer {
     }
 
     private static void renderBoxLines(PoseStack.Pose pose, VertexConsumer buffer, double x1, double y1, double z1, double x2, double y2, double z2, float r, float g, float b, float a) {
-        // Bottom square
         line(buffer, pose, x1, y1, z1, x2, y1, z1, r, g, b, a);
         line(buffer, pose, x2, y1, z1, x2, y1, z2, r, g, b, a);
         line(buffer, pose, x2, y1, z2, x1, y1, z2, r, g, b, a);
         line(buffer, pose, x1, y1, z2, x1, y1, z1, r, g, b, a);
-        // Top square
+
         line(buffer, pose, x1, y2, z1, x2, y2, z1, r, g, b, a);
         line(buffer, pose, x2, y2, z1, x2, y2, z2, r, g, b, a);
         line(buffer, pose, x2, y2, z2, x1, y2, z2, r, g, b, a);
         line(buffer, pose, x1, y2, z2, x1, y2, z1, r, g, b, a);
-        // Vertical pillars
+
         line(buffer, pose, x1, y1, z1, x1, y2, z1, r, g, b, a);
         line(buffer, pose, x2, y1, z1, x2, y2, z1, r, g, b, a);
         line(buffer, pose, x2, y1, z2, x2, y2, z2, r, g, b, a);
