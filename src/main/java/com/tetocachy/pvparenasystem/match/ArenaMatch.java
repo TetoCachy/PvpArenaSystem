@@ -7,15 +7,19 @@ import com.tetocachy.pvparenasystem.dimension.ModDimensions;
 import com.tetocachy.pvparenasystem.kit.Kit;
 import com.tetocachy.pvparenasystem.player.PlayerStateManager;
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.Holder;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ArenaMatch {
     private final UUID matchId = UUID.randomUUID();
@@ -25,20 +29,21 @@ public class ArenaMatch {
     private final int roundsToWin;
     private final Map<Integer, TeamData> teams = new HashMap<>();
     private final Set<UUID> allPlayers = new HashSet<>();
-    private final Set<UUID> spectators = new HashSet<>();
+    private final Map<UUID, Vec3> spawnFreezePositions = new ConcurrentHashMap<>();
 
     private MatchState state = MatchState.WAITING;
     private int countdownTimer = ArenaModConfig.COUNTDOWN_SECONDS * 20;
     private int celebrationTimer = ArenaModConfig.CELEBRATION_SECONDS * 20;
+    private int intermissionTimer = 0;
     private int currentRound = 1;
 
     public ArenaMatch(MinecraftServer server, Arena arena, Kit kit, int roundsToWin, Map<Integer, List<UUID>> teamAssignments) {
         this.server = server;
         this.arena = arena;
         this.kit = kit;
-        this.roundsToWin = roundsToWin;
+        this.roundsToWin = Math.max(1, roundsToWin);
 
-        ChatFormatting[] colors = {ChatFormatting.RED, ChatFormatting.BLUE, ChatFormatting.GREEN, ChatFormatting.YELLOW, ChatFormatting.AQUA, ChatFormatting.LIGHT_PURPLE};
+        ChatFormatting[] colors = {ChatFormatting.RED, ChatFormatting.BLUE, ChatFormatting.GREEN, ChatFormatting.YELLOW, ChatFormatting.AQUA, ChatFormatting.LIGHT_PURPLE, ChatFormatting.GOLD, ChatFormatting.WHITE};
         int cIndex = 0;
         for (Map.Entry<Integer, List<UUID>> entry : teamAssignments.entrySet()) {
             int tIndex = entry.getKey();
@@ -66,6 +71,7 @@ public class ArenaMatch {
     private void prepareRound() {
         state = MatchState.COUNTDOWN;
         countdownTimer = ArenaModConfig.COUNTDOWN_SECONDS * 20;
+        spawnFreezePositions.clear();
 
         for (TeamData team : teams.values()) {
             team.resetRound();
@@ -87,33 +93,58 @@ public class ArenaMatch {
                     if (!spawns.isEmpty()) {
                         SpawnPoint sp = spawns.get(spIndex % spawns.size());
                         sp.teleport(player);
+                        spawnFreezePositions.put(uuid, new Vec3(sp.getX(), sp.getY(), sp.getZ()));
+                    } else {
+                        spawnFreezePositions.put(uuid, player.position());
                     }
                     spIndex++;
                 }
             }
         }
 
-        broadcast("§6[PvpArena] §eRound " + currentRound + " is starting!");
+        broadcast("§6[PvpArena] §eRound " + currentRound + " / " + (roundsToWin * 2 - 1) + " is starting!");
     }
 
     public void tick() {
         if (state == MatchState.COUNTDOWN) {
+            for (UUID uuid : allPlayers) {
+                ServerPlayer p = server.getPlayerList().getPlayer(uuid);
+                Vec3 freeze = spawnFreezePositions.get(uuid);
+                if (p != null && freeze != null) {
+                    if (p.distanceToSqr(freeze.x, freeze.y, freeze.z) > 0.05) {
+                        p.teleportTo((ServerLevel) p.level(), freeze.x, freeze.y, freeze.z, Set.of(), p.getYRot(), p.getXRot(), true);
+                        p.setDeltaMovement(0, 0, 0);
+                    }
+                }
+            }
+
             if (countdownTimer % 20 == 0) {
                 int secondsLeft = countdownTimer / 20;
                 if (secondsLeft > 0) {
                     broadcastTitle("§e" + secondsLeft, "§7Get Ready!");
-                    playSound(SoundEvents.NOTE_BLOCK_PLING.value(), 1.0F, 1.0F);
+                    playSound(SoundEvents.NOTE_BLOCK_PLING, 1.0F, 1.0F);
                 } else {
                     broadcastTitle("§a§lFIGHT!", "§eRound " + currentRound);
-                    playSound(SoundEvents.NOTE_BLOCK_PLING.value(), 1.0F, 2.0F);
+                    playSound(SoundEvents.NOTE_BLOCK_PLING, 1.0F, 2.0F);
                     state = MatchState.IN_PROGRESS;
                 }
             }
             countdownTimer--;
         } else if (state == MatchState.ENDING) {
-            celebrationTimer--;
-            if (celebrationTimer <= 0) {
-                cleanupAndEnd();
+            if (intermissionTimer > 0) {
+                intermissionTimer--;
+                if (intermissionTimer % 20 == 0 && intermissionTimer > 0) {
+                    broadcastTitle("§6Next Round", "§eStarting in " + (intermissionTimer / 20) + "s...");
+                }
+                if (intermissionTimer <= 0) {
+                    currentRound++;
+                    prepareRound();
+                }
+            } else {
+                celebrationTimer--;
+                if (celebrationTimer <= 0) {
+                    cleanupAndEnd();
+                }
             }
         }
     }
@@ -124,14 +155,14 @@ public class ArenaMatch {
         if (playerTeam == null || !playerTeam.isAlive(uuid)) return;
 
         playerTeam.markEliminated(uuid);
+
         player.setHealth(player.getMaxHealth());
         player.removeAllEffects();
         player.setGameMode(GameType.SPECTATOR);
+        player.setDeltaMovement(0, 0.6, 0);
+        player.hurtMarked = true;
 
-        if (arena.getSpectatorSpawn() != null) {
-            arena.getSpectatorSpawn().teleport(player);
-        }
-
+        player.sendSystemMessage(Component.literal("§c§lYOU WERE ELIMINATED!"), true);
         broadcast(playerTeam.getColor() + player.getScoreboardName() + " §7was eliminated!");
         checkRoundOver();
     }
@@ -148,10 +179,9 @@ public class ArenaMatch {
             if (survivingTeams.size() == 1) {
                 TeamData winner = survivingTeams.get(0);
                 winner.incrementScore();
-                broadcast(winner.getColor() + winner.getName() + " §awon Round " + currentRound + "!");
+                broadcast("§6§l[Round Over] " + winner.getColor() + winner.getName() + " §awon Round " + currentRound + "! §7(Score: " + winner.getScore() + "/" + roundsToWin + ")");
 
                 if (winner.getScore() >= roundsToWin) {
-                    // Match Won!
                     state = MatchState.ENDING;
                     celebrationTimer = ArenaModConfig.CELEBRATION_SECONDS * 20;
                     broadcastTitle("§6§lVICTORY!", winner.getColor() + winner.getName() + " won the match!");
@@ -162,9 +192,10 @@ public class ArenaMatch {
                 broadcast("§eRound ended in a Draw!");
             }
 
-            // Next round
-            currentRound++;
-            prepareRound();
+            state = MatchState.ENDING;
+            intermissionTimer = 60; // 3 seconds pause
+            broadcastTitle("§6Round Complete", "§7Next round in 3 seconds...");
+            playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
         }
     }
 
@@ -177,7 +208,6 @@ public class ArenaMatch {
     public void cleanupAndEnd() {
         state = MatchState.RESETTING;
 
-        // Restore all players safely
         for (UUID uuid : allPlayers) {
             ServerPlayer player = server.getPlayerList().getPlayer(uuid);
             if (player != null) {
@@ -186,7 +216,6 @@ public class ArenaMatch {
             }
         }
 
-        // Rollback arena
         ServerLevel arenaLevel = ModDimensions.getArenaLevel(server);
         arena.rollbackMap(arenaLevel);
         arena.setInUse(false);
@@ -201,9 +230,7 @@ public class ArenaMatch {
         return null;
     }
 
-    public boolean hasPlayer(UUID uuid) {
-        return allPlayers.contains(uuid);
-    }
+    public boolean hasPlayer(UUID uuid) { return allPlayers.contains(uuid); }
 
     public void broadcast(String message) {
         Component comp = Component.literal(message);
@@ -222,7 +249,11 @@ public class ArenaMatch {
         }
     }
 
-    public void playSound(net.minecraft.sounds.SoundEvent sound, float volume, float pitch) {
+    public void playSound(Holder<SoundEvent> sound, float volume, float pitch) {
+        playSound(sound.value(), volume, pitch);
+    }
+
+    public void playSound(SoundEvent sound, float volume, float pitch) {
         for (UUID uuid : allPlayers) {
             ServerPlayer p = server.getPlayerList().getPlayer(uuid);
             if (p != null) {

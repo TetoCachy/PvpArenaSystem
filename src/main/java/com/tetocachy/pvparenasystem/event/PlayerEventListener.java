@@ -5,6 +5,7 @@ import com.tetocachy.pvparenasystem.admin.SetupSession;
 import com.tetocachy.pvparenasystem.config.ArenaModConfig;
 import com.tetocachy.pvparenasystem.match.ArenaMatch;
 import com.tetocachy.pvparenasystem.match.MatchManager;
+import com.tetocachy.pvparenasystem.network.ModPackets;
 import com.tetocachy.pvparenasystem.player.PlayerStateManager;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
@@ -18,13 +19,14 @@ import net.minecraft.world.InteractionResult;
 public class PlayerEventListener {
 
     public static void register() {
-        // 1. Selection Wand Left-Click (Pos 1)
+        // 1. Wand Left-Click: Pos 1
         AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
             if (player instanceof ServerPlayer serverPlayer && !world.isClientSide()) {
                 MinecraftServer server = serverPlayer.level().getServer();
                 if (server != null && server.getPlayerList().isOp(serverPlayer.nameAndId()) && SelectionManager.isWandEnabled(player.getUUID())) {
                     if (player.getItemInHand(hand).is(ArenaModConfig.WAND_ITEM)) {
                         SelectionManager.setPos1(serverPlayer, pos);
+                        ModPackets.sendSyncToPlayer(serverPlayer);
                         return InteractionResult.SUCCESS;
                     }
                 }
@@ -32,13 +34,19 @@ public class PlayerEventListener {
             return InteractionResult.PASS;
         });
 
-        // 2. Selection Wand Right-Click (Pos 2)
+        // 2. Wand Right-Click: Pos 2 or Spawn Selector in Setup Mode
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (player instanceof ServerPlayer serverPlayer && !world.isClientSide()) {
                 MinecraftServer server = serverPlayer.level().getServer();
                 if (server != null && server.getPlayerList().isOp(serverPlayer.nameAndId()) && SelectionManager.isWandEnabled(player.getUUID())) {
                     if (player.getItemInHand(hand).is(ArenaModConfig.WAND_ITEM)) {
-                        SelectionManager.setPos2(serverPlayer, hitResult.getBlockPos());
+                        if (SetupSession.isInSetup(player.getUUID())) {
+                            // Open Spawn Selector directly in GUI
+                            ModPackets.sendSyncToPlayer(serverPlayer);
+                        } else {
+                            SelectionManager.setPos2(serverPlayer, hitResult.getBlockPos());
+                            ModPackets.sendSyncToPlayer(serverPlayer);
+                        }
                         return InteractionResult.SUCCESS;
                     }
                 }
@@ -56,7 +64,7 @@ public class PlayerEventListener {
             return true;
         });
 
-        // 4. Intercept Fatal Damage in matches (Zero Death Drops / Clean Spectating)
+        // 4. Intercept Fatal Damage in matches
         ServerLivingEntityEvents.ALLOW_DEATH.register((entity, damageSource, damageAmount) -> {
             if (entity instanceof ServerPlayer player) {
                 ArenaMatch match = MatchManager.getPlayerMatch(player.getUUID());
@@ -69,16 +77,18 @@ public class PlayerEventListener {
         });
 
         // 5. Connection Events
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-            PlayerStateManager.onPlayerJoin(handler.getPlayer());
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> PlayerStateManager.onPlayerJoin(handler.getPlayer()));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            MatchManager.onPlayerDisconnect(handler.getPlayer());
+            if (SetupSession.isInSetup(handler.getPlayer().getUUID())) {
+                SetupSession.finishSetup(handler.getPlayer());
+            }
         });
 
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
-            ServerPlayer player = handler.getPlayer();
-            MatchManager.onPlayerDisconnect(player);
-            if (SetupSession.isInSetup(player.getUUID())) {
-                SetupSession.finishSetup(player);
-            }
+        // Under connection events:
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            PlayerStateManager.onPlayerJoin(handler.getPlayer());
+            ModPackets.sendSyncToPlayer(handler.getPlayer()); // Syncs immediately upon loading in
         });
     }
 }

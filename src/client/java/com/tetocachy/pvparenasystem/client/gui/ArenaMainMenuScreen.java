@@ -15,8 +15,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ArenaMainMenuScreen extends Screen {
-    private static final int WINDOW_WIDTH = 280;
-    private static final int WINDOW_HEIGHT = 160;
+    private static final int WINDOW_WIDTH = 380;
+    private static final int WINDOW_HEIGHT = 225;
     private static final int TAB_WIDTH = 28;
     private static final int TAB_HEIGHT = 28;
 
@@ -27,7 +27,7 @@ public class ArenaMainMenuScreen extends Screen {
 
     public ArenaMainMenuScreen() {
         super(Component.literal("PvP Arena System"));
-        tabs.add(new DuelsTab());
+        tabs.add(new LobbiesTab());
         tabs.add(new PartyTab());
         tabs.add(new KitsTab());
         tabs.add(new ArenasTab());
@@ -49,17 +49,16 @@ public class ArenaMainMenuScreen extends Screen {
 
         if (activeTabIndex >= 0 && activeTabIndex < tabs.size()) {
             ArenaScreenTab activeTab = tabs.get(activeTabIndex);
-            int contentX = leftPos + 10;
-            int contentY = topPos + 26;
-            int contentWidth = WINDOW_WIDTH - 20;
-            int contentHeight = WINDOW_HEIGHT - 34;
+            int contentX = leftPos + 8;
+            int contentY = topPos + 24;
+            int contentWidth = WINDOW_WIDTH - 16;
+            int contentHeight = WINDOW_HEIGHT - 30;
             activeTab.init(contentX, contentY, contentWidth, contentHeight, this::addRenderableWidget);
         }
     }
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
-        // Handle clicking top advancement tabs
         int tabX = leftPos + 8;
         int tabY = topPos - 26;
 
@@ -83,7 +82,7 @@ public class ArenaMainMenuScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        // 1. Draw Top Advancement Tabs
+        // Tab Icons
         int tabX = leftPos + 8;
         ArenaScreenTab hoveredTab = null;
         int hoveredTabX = 0;
@@ -97,22 +96,18 @@ public class ArenaMainMenuScreen extends Screen {
             int currentTabY = isSelected ? (topPos - 28) : (topPos - 24);
             int currentTabH = isSelected ? 30 : 25;
 
-            // Tab Box Background
-            int bgColor = isSelected ? 0xFF3C3C44 : 0xC0222228;
-            int borderColor = isSelected ? 0xFFFFFFFF : 0xFF666670;
+            int bgColor = isSelected ? 0xFF2F323A : 0xC01E2026;
+            int borderColor = isSelected ? 0xFFFFFFFF : 0xFF555566;
 
             graphics.fill(tabX, currentTabY, tabX + TAB_WIDTH, currentTabY + currentTabH, bgColor);
             graphics.outline(tabX, currentTabY, TAB_WIDTH, currentTabH, borderColor);
 
             if (isSelected) {
-                // Blend bottom line into window
-                graphics.fill(tabX + 1, topPos - 1, tabX + TAB_WIDTH - 1, topPos + 2, 0xFF3C3C44);
+                graphics.fill(tabX + 1, topPos - 1, tabX + TAB_WIDTH - 1, topPos + 2, 0xFF2F323A);
             }
 
-            // Draw Tab Item Icon
             graphics.item(tab.getIcon(), tabX + 6, currentTabY + (isSelected ? 6 : 4));
 
-            // Check Hover
             if (mouseX >= tabX && mouseX <= tabX + TAB_WIDTH && mouseY >= currentTabY && mouseY <= currentTabY + currentTabH) {
                 hoveredTab = tab;
                 hoveredTabX = tabX;
@@ -122,29 +117,25 @@ public class ArenaMainMenuScreen extends Screen {
             tabX += TAB_WIDTH + 4;
         }
 
-        // 2. Main Window Frame
-        graphics.fill(leftPos, topPos, leftPos + WINDOW_WIDTH, topPos + WINDOW_HEIGHT, 0xF0181818);
-        graphics.fill(leftPos + 2, topPos + 2, leftPos + WINDOW_WIDTH - 2, topPos + WINDOW_HEIGHT - 2, 0xF02C2C34);
-        graphics.outline(leftPos, topPos, WINDOW_WIDTH, WINDOW_HEIGHT, 0xFFFFFFFF);
+        // Main Dialog
+        graphics.fill(leftPos, topPos, leftPos + WINDOW_WIDTH, topPos + WINDOW_HEIGHT, 0xF2121317);
+        graphics.fill(leftPos + 2, topPos + 2, leftPos + WINDOW_WIDTH - 2, topPos + WINDOW_HEIGHT - 2, 0xF220222A);
+        graphics.outline(leftPos, topPos, WINDOW_WIDTH, WINDOW_HEIGHT, 0xFF888899);
 
-        // Header Separator
-        graphics.fill(leftPos + 4, topPos + 20, leftPos + WINDOW_WIDTH - 4, topPos + 21, 0xFF4E4E58);
+        // Header Line
+        graphics.fill(leftPos + 4, topPos + 20, leftPos + WINDOW_WIDTH - 4, topPos + 21, 0xFF3F424D);
 
-        // Header Title
         if (activeTabIndex >= 0 && activeTabIndex < tabs.size()) {
             ArenaScreenTab activeTab = tabs.get(activeTabIndex);
-            graphics.text(this.font, activeTab.getTitle(), leftPos + 10, topPos + 7, 0xFFFFE680, true);
+            graphics.text(this.font, activeTab.getTitle(), leftPos + 10, topPos + 6, 0xFFFFDF60, true);
         }
 
-        // 3. Render Tab Content
         if (activeTabIndex >= 0 && activeTabIndex < tabs.size()) {
             tabs.get(activeTabIndex).extractRenderState(graphics, mouseX, mouseY, partialTick);
         }
 
-        // 4. Render Active Widgets (Buttons, Inputs)
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
-        // 5. Draw Advancement-Style Tooltip when Hovering Tabs
         if (hoveredTab != null) {
             String text = hoveredTab.getTitle().getString();
             int textWidth = this.font.width(text);

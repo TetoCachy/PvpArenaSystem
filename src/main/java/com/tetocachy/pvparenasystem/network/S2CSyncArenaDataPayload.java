@@ -1,9 +1,11 @@
 package com.tetocachy.pvparenasystem.network;
 
 import com.tetocachy.pvparenasystem.PvpArenaSystem;
-import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -11,94 +13,179 @@ import java.util.List;
 public record S2CSyncArenaDataPayload(
         boolean isAdmin,
         boolean inSetup,
+        String editingArenaId,
+        BlockPos pos1,
+        BlockPos pos2,
         List<String> onlinePlayers,
         List<KitInfo> kits,
         List<ArenaInfo> arenas,
+        List<LobbyInfo> lobbies,
+        LobbyInfo currentLobby,
         PartyInfo party,
-        List<DuelInviteInfo> invites
+        List<PublicPartyInfo> publicParties
 ) implements CustomPacketPayload {
     public static final Type<S2CSyncArenaDataPayload> TYPE = new Type<>(PvpArenaSystem.id("s2c_sync_arena_data"));
 
-    public record KitInfo(String id, String displayName) {}
-    public record ArenaInfo(String id, String displayName, int status, int teamSpawnCount) {}
-    public record PartyInfo(boolean inParty, boolean isLeader, String leaderName, List<String> members) {}
-    public record DuelInviteInfo(String senderName, String kitName, String arenaName, int rounds) {}
+    public record KitInfo(String id, String displayName, List<ItemStack> previewItems) {}
+    public record ArenaInfo(String id, String displayName, int status, int maxTeams, int maxPlayersPerTeam, int teamSpawnCount) {}
+    public record LobbyInfo(String lobbyId, String hostName, String arenaName, String kitName, int teamCount, int playersPerTeam, int rounds, List<TeamSlotInfo> teams) {}
+    public record TeamSlotInfo(int teamIndex, List<String> memberNames) {}
+    public record PartyInfo(boolean inParty, boolean isLeader, boolean isPublic, String partyName, String leaderName, int maxMembers, List<String> members) {}
+    public record PublicPartyInfo(String partyName, String leaderName, int memberCount, int maxMembers) {}
 
-    public static final StreamCodec<FriendlyByteBuf, S2CSyncArenaDataPayload> STREAM_CODEC = StreamCodec.of(
+    public static final StreamCodec<RegistryFriendlyByteBuf, S2CSyncArenaDataPayload> STREAM_CODEC = StreamCodec.of(
             (buf, p) -> {
                 buf.writeBoolean(p.isAdmin());
                 buf.writeBoolean(p.inSetup());
+                buf.writeUtf(p.editingArenaId());
 
-                // Players
+                buf.writeBoolean(p.pos1() != null);
+                if (p.pos1() != null) buf.writeBlockPos(p.pos1());
+                buf.writeBoolean(p.pos2() != null);
+                if (p.pos2() != null) buf.writeBlockPos(p.pos2());
+
                 buf.writeInt(p.onlinePlayers().size());
-                for (String player : p.onlinePlayers()) buf.writeUtf(player);
+                for (String pl : p.onlinePlayers()) buf.writeUtf(pl);
 
-                // Kits
+                // Kits with item stack list encoding
                 buf.writeInt(p.kits().size());
                 for (KitInfo k : p.kits()) {
                     buf.writeUtf(k.id());
                     buf.writeUtf(k.displayName());
+                    buf.writeInt(k.previewItems().size());
+                    for (ItemStack stack : k.previewItems()) {
+                        ItemStack.OPTIONAL_STREAM_CODEC.encode(buf, stack);
+                    }
                 }
 
-                // Arenas
                 buf.writeInt(p.arenas().size());
                 for (ArenaInfo a : p.arenas()) {
                     buf.writeUtf(a.id());
                     buf.writeUtf(a.displayName());
                     buf.writeInt(a.status());
+                    buf.writeInt(a.maxTeams());
+                    buf.writeInt(a.maxPlayersPerTeam());
                     buf.writeInt(a.teamSpawnCount());
                 }
 
-                // Party
+                buf.writeInt(p.lobbies().size());
+                for (LobbyInfo l : p.lobbies()) writeLobby(buf, l);
+
+                buf.writeBoolean(p.currentLobby() != null);
+                if (p.currentLobby() != null) writeLobby(buf, p.currentLobby());
+
                 buf.writeBoolean(p.party().inParty());
                 buf.writeBoolean(p.party().isLeader());
+                buf.writeBoolean(p.party().isPublic());
+                buf.writeUtf(p.party().partyName());
                 buf.writeUtf(p.party().leaderName());
+                buf.writeInt(p.party().maxMembers());
                 buf.writeInt(p.party().members().size());
                 for (String m : p.party().members()) buf.writeUtf(m);
 
-                // Invites
-                buf.writeInt(p.invites().size());
-                for (DuelInviteInfo inv : p.invites()) {
-                    buf.writeUtf(inv.senderName());
-                    buf.writeUtf(inv.kitName());
-                    buf.writeUtf(inv.arenaName());
-                    buf.writeInt(inv.rounds());
+                buf.writeInt(p.publicParties().size());
+                for (PublicPartyInfo pub : p.publicParties()) {
+                    buf.writeUtf(pub.partyName());
+                    buf.writeUtf(pub.leaderName());
+                    buf.writeInt(pub.memberCount());
+                    buf.writeInt(pub.maxMembers());
                 }
             },
             buf -> {
                 boolean isAdmin = buf.readBoolean();
                 boolean inSetup = buf.readBoolean();
+                String editingArenaId = buf.readUtf();
 
-                int playerCount = buf.readInt();
-                List<String> players = new ArrayList<>(playerCount);
-                for (int i = 0; i < playerCount; i++) players.add(buf.readUtf());
+                BlockPos p1 = buf.readBoolean() ? buf.readBlockPos() : null;
+                BlockPos p2 = buf.readBoolean() ? buf.readBlockPos() : null;
 
-                int kitCount = buf.readInt();
-                List<KitInfo> kits = new ArrayList<>(kitCount);
-                for (int i = 0; i < kitCount; i++) kits.add(new KitInfo(buf.readUtf(), buf.readUtf()));
+                int pCount = buf.readInt();
+                List<String> players = new ArrayList<>(pCount);
+                for (int i = 0; i < pCount; i++) players.add(buf.readUtf());
 
-                int arenaCount = buf.readInt();
-                List<ArenaInfo> arenas = new ArrayList<>(arenaCount);
-                for (int i = 0; i < arenaCount; i++) arenas.add(new ArenaInfo(buf.readUtf(), buf.readUtf(), buf.readInt(), buf.readInt()));
+                // Kits with item stack list decoding
+                int kCount = buf.readInt();
+                List<KitInfo> kits = new ArrayList<>(kCount);
+                for (int i = 0; i < kCount; i++) {
+                    String id = buf.readUtf();
+                    String name = buf.readUtf();
+                    int itemCount = buf.readInt();
+                    List<ItemStack> items = new ArrayList<>(itemCount);
+                    for (int j = 0; j < itemCount; j++) {
+                        items.add(ItemStack.OPTIONAL_STREAM_CODEC.decode(buf));
+                    }
+                    kits.add(new KitInfo(id, name, items));
+                }
+
+                int aCount = buf.readInt();
+                List<ArenaInfo> arenas = new ArrayList<>(aCount);
+                for (int i = 0; i < aCount; i++) {
+                    arenas.add(new ArenaInfo(buf.readUtf(), buf.readUtf(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt()));
+                }
+
+                int lCount = buf.readInt();
+                List<LobbyInfo> lobbies = new ArrayList<>(lCount);
+                for (int i = 0; i < lCount; i++) lobbies.add(readLobby(buf));
+
+                LobbyInfo currentLobby = buf.readBoolean() ? readLobby(buf) : null;
 
                 boolean inParty = buf.readBoolean();
                 boolean isLeader = buf.readBoolean();
+                boolean isPublic = buf.readBoolean();
+                String partyName = buf.readUtf();
                 String leaderName = buf.readUtf();
-                int memberCount = buf.readInt();
-                List<String> members = new ArrayList<>(memberCount);
-                for (int i = 0; i < memberCount; i++) members.add(buf.readUtf());
-                PartyInfo party = new PartyInfo(inParty, isLeader, leaderName, members);
+                int maxMembers = buf.readInt();
+                int mCount = buf.readInt();
+                List<String> partyMembers = new ArrayList<>(mCount);
+                for (int i = 0; i < mCount; i++) partyMembers.add(buf.readUtf());
+                PartyInfo party = new PartyInfo(inParty, isLeader, isPublic, partyName, leaderName, maxMembers, partyMembers);
 
-                int inviteCount = buf.readInt();
-                List<DuelInviteInfo> invites = new ArrayList<>(inviteCount);
-                for (int i = 0; i < inviteCount; i++) invites.add(new DuelInviteInfo(buf.readUtf(), buf.readUtf(), buf.readUtf(), buf.readInt()));
+                int pubCount = buf.readInt();
+                List<PublicPartyInfo> pubParties = new ArrayList<>(pubCount);
+                for (int i = 0; i < pubCount; i++) {
+                    pubParties.add(new PublicPartyInfo(buf.readUtf(), buf.readUtf(), buf.readInt(), buf.readInt()));
+                }
 
-                return new S2CSyncArenaDataPayload(isAdmin, inSetup, players, kits, arenas, party, invites);
+                return new S2CSyncArenaDataPayload(isAdmin, inSetup, editingArenaId, p1, p2, players, kits, arenas, lobbies, currentLobby, party, pubParties);
             }
     );
 
-    @Override
-    public Type<? extends CustomPacketPayload> type() {
-        return TYPE;
+    private static void writeLobby(RegistryFriendlyByteBuf buf, LobbyInfo l) {
+        buf.writeUtf(l.lobbyId());
+        buf.writeUtf(l.hostName());
+        buf.writeUtf(l.arenaName());
+        buf.writeUtf(l.kitName());
+        buf.writeInt(l.teamCount());
+        buf.writeInt(l.playersPerTeam());
+        buf.writeInt(l.rounds());
+        buf.writeInt(l.teams().size());
+        for (TeamSlotInfo t : l.teams()) {
+            buf.writeInt(t.teamIndex());
+            buf.writeInt(t.memberNames().size());
+            for (String name : t.memberNames()) buf.writeUtf(name);
+        }
     }
+
+    private static LobbyInfo readLobby(RegistryFriendlyByteBuf buf) {
+        String id = buf.readUtf();
+        String host = buf.readUtf();
+        String arena = buf.readUtf();
+        String kit = buf.readUtf();
+        int tc = buf.readInt();
+        int ppt = buf.readInt();
+        int rounds = buf.readInt();
+        int tSize = buf.readInt();
+        List<TeamSlotInfo> teams = new ArrayList<>(tSize);
+        for (int i = 0; i < tSize; i++) {
+            int tIndex = buf.readInt();
+            int mCount = buf.readInt();
+            List<String> members = new ArrayList<>(mCount);
+            for (int j = 0; j < mCount; j++) members.add(buf.readUtf());
+            teams.add(new TeamSlotInfo(tIndex, members));
+        }
+        return new LobbyInfo(id, host, arena, kit, tc, ppt, rounds, teams);
+    }
+
+    @Override
+    public Type<? extends CustomPacketPayload> type() { return TYPE; }
 }

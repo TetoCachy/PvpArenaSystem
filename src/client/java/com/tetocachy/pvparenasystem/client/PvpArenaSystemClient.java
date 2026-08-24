@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.tetocachy.pvparenasystem.PvpArenaSystem;
 import com.tetocachy.pvparenasystem.client.data.ClientArenaCache;
 import com.tetocachy.pvparenasystem.client.gui.ArenaMainMenuScreen;
+import com.tetocachy.pvparenasystem.client.render.SelectionBoxRenderer;
 import com.tetocachy.pvparenasystem.network.S2CSyncArenaDataPayload;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -23,6 +24,9 @@ public class PvpArenaSystemClient implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
+		// Register Selection Box 3D Renderer
+		SelectionBoxRenderer.register();
+
 		OPEN_MENU_KEY = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.pvparenasystem.open_menu",
 				InputConstants.Type.KEYSYM,
@@ -35,8 +39,6 @@ public class PvpArenaSystemClient implements ClientModInitializer {
 				ClientArenaCache.update(payload);
 				if (Minecraft.getInstance().gui.screen() instanceof ArenaMainMenuScreen menu) {
 					menu.rebuildTabContent();
-				} else {
-					Minecraft.getInstance().gui.setScreen(new ArenaMainMenuScreen());
 				}
 			});
 		});

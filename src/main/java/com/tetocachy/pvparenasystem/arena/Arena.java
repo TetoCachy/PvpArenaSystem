@@ -13,6 +13,8 @@ public class Arena {
     private String displayName;
     private BlockPos minPos;
     private BlockPos maxPos;
+    private int maxTeams = 2;
+    private int maxPlayersPerTeam = 1;
     private final Map<Integer, List<SpawnPoint>> teamSpawns = new HashMap<>();
     private SpawnPoint spectatorSpawn;
     private SpawnPoint lobbySpawn;
@@ -28,21 +30,19 @@ public class Arena {
     }
 
     public boolean isConfigured() {
-        return teamSpawns.containsKey(1) && teamSpawns.containsKey(2) && spectatorSpawn != null;
+        return teamSpawns.size() >= 2 && spectatorSpawn != null;
     }
 
     public void addTeamSpawn(int teamIndex, SpawnPoint spawn) {
         teamSpawns.computeIfAbsent(teamIndex, k -> new ArrayList<>()).add(spawn);
     }
 
-    public List<SpawnPoint> getTeamSpawns(int teamIndex) {
-        return teamSpawns.getOrDefault(teamIndex, Collections.emptyList());
+    public void clearTeamSpawns(int teamIndex) {
+        teamSpawns.remove(teamIndex);
     }
 
-    public boolean contains(BlockPos pos) {
-        return pos.getX() >= minPos.getX() && pos.getX() <= maxPos.getX()
-                && pos.getY() >= minPos.getY() && pos.getY() <= maxPos.getY()
-                && pos.getZ() >= minPos.getZ() && pos.getZ() <= maxPos.getZ();
+    public List<SpawnPoint> getTeamSpawns(int teamIndex) {
+        return teamSpawns.getOrDefault(teamIndex, Collections.emptyList());
     }
 
     public void captureMapSnapshot(ServerLevel level) {
@@ -62,6 +62,8 @@ public class Arena {
         JsonObject obj = new JsonObject();
         obj.addProperty("id", id);
         obj.addProperty("displayName", displayName);
+        obj.addProperty("maxTeams", maxTeams);
+        obj.addProperty("maxPlayersPerTeam", maxPlayersPerTeam);
 
         JsonObject min = new JsonObject();
         min.addProperty("x", minPos.getX());
@@ -102,6 +104,8 @@ public class Arena {
         BlockPos maxPos = new BlockPos(max.get("x").getAsInt(), max.get("y").getAsInt(), max.get("z").getAsInt());
 
         Arena arena = new Arena(id, name, minPos, maxPos);
+        if (obj.has("maxTeams")) arena.setMaxTeams(obj.get("maxTeams").getAsInt());
+        if (obj.has("maxPlayersPerTeam")) arena.setMaxPlayersPerTeam(obj.get("maxPlayersPerTeam").getAsInt());
 
         if (obj.has("teamSpawns")) {
             JsonObject spawnsObj = obj.getAsJsonObject("teamSpawns");
@@ -124,11 +128,15 @@ public class Arena {
         return arena;
     }
 
-    // Getters & Setters
     public String getId() { return id; }
     public String getDisplayName() { return displayName; }
+    public void setDisplayName(String name) { this.displayName = name; }
     public BlockPos getMinPos() { return minPos; }
     public BlockPos getMaxPos() { return maxPos; }
+    public int getMaxTeams() { return maxTeams; }
+    public void setMaxTeams(int maxTeams) { this.maxTeams = Math.max(2, maxTeams); }
+    public int getMaxPlayersPerTeam() { return maxPlayersPerTeam; }
+    public void setMaxPlayersPerTeam(int maxPlayersPerTeam) { this.maxPlayersPerTeam = Math.max(1, maxPlayersPerTeam); }
     public void setSpectatorSpawn(SpawnPoint sp) { this.spectatorSpawn = sp; }
     public SpawnPoint getSpectatorSpawn() { return spectatorSpawn; }
     public void setLobbySpawn(SpawnPoint sp) { this.lobbySpawn = sp; }

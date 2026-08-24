@@ -23,8 +23,7 @@ public class PartyCommand {
                 .then(Commands.literal("create")
                         .executes(ctx -> {
                             ServerPlayer player = ctx.getSource().getPlayerOrException();
-                            PartyManager.createParty(player.getUUID());
-                            player.sendSystemMessage(Component.literal("§aParty created! Use §6/party invite <player> §ato invite teammates."), false);
+                            PartyManager.createParty(player);
                             return 1;
                         }))
                 .then(Commands.literal("invite")
@@ -37,21 +36,14 @@ public class PartyCommand {
                                         player.sendSystemMessage(Component.literal("§cYou are not the party leader!"), false);
                                         return 0;
                                     }
-                                    party.addMember(target.getUUID());
-                                    target.sendSystemMessage(Component.literal("§aYou joined §e" + player.getScoreboardName() + "'s §aparty!"), false);
-                                    player.sendSystemMessage(Component.literal("§e" + target.getScoreboardName() + " §ahas joined the party!"), false);
+                                    PartyManager.joinParty(target, party, ctx.getSource().getServer());
                                     return 1;
                                 })))
                 .then(Commands.literal("leave")
                         .executes(ctx -> {
                             ServerPlayer player = ctx.getSource().getPlayerOrException();
-                            Party party = PartyManager.getParty(player.getUUID());
-                            if (party != null) {
-                                party.removeMember(player.getUUID());
-                                player.sendSystemMessage(Component.literal("§7You left the party."), false);
-                                return 1;
-                            }
-                            return 0;
+                            PartyManager.leaveParty(player, ctx.getSource().getServer());
+                            return 1;
                         }))
                 .then(Commands.literal("duel")
                         .then(Commands.argument("targetLeader", EntityArgument.player())
