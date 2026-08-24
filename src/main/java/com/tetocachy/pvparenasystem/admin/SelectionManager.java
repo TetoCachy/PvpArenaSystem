@@ -1,6 +1,5 @@
 package com.tetocachy.pvparenasystem.admin;
 
-import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -24,6 +23,12 @@ public class SelectionManager {
         pos2Map.put(player.getUUID(), pos);
         player.sendSystemMessage(Component.literal("§a[PvpArena] Pos 2 set to: §f(" + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + ")"), false);
         checkSelection(player);
+    }
+
+    public static void clearSelection(ServerPlayer player) {
+        pos1Map.remove(player.getUUID());
+        pos2Map.remove(player.getUUID());
+        player.sendSystemMessage(Component.literal("§e[PvpArena] Selection cleared!"), false);
     }
 
     private static void checkSelection(ServerPlayer player) {

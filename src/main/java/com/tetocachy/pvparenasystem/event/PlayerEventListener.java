@@ -11,6 +11,7 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -34,20 +35,41 @@ public class PlayerEventListener {
             return InteractionResult.PASS;
         });
 
-        // 2. Wand Right-Click: Pos 2 or Spawn Selector in Setup Mode
+        // 2. Wand Right-Click on Block: Shift = Clear Selection, Pos 2 or Spawn Selector in Setup Mode
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (player instanceof ServerPlayer serverPlayer && !world.isClientSide()) {
                 MinecraftServer server = serverPlayer.level().getServer();
                 if (server != null && server.getPlayerList().isOp(serverPlayer.nameAndId()) && SelectionManager.isWandEnabled(player.getUUID())) {
                     if (player.getItemInHand(hand).is(ArenaModConfig.WAND_ITEM)) {
+                        if (player.isShiftKeyDown() || player.isCrouching()) {
+                            SelectionManager.clearSelection(serverPlayer);
+                            ModPackets.sendSyncToPlayer(serverPlayer);
+                            return InteractionResult.SUCCESS;
+                        }
                         if (SetupSession.isInSetup(player.getUUID())) {
-                            // Open Spawn Selector directly in GUI
                             ModPackets.sendSyncToPlayer(serverPlayer);
                         } else {
                             SelectionManager.setPos2(serverPlayer, hitResult.getBlockPos());
                             ModPackets.sendSyncToPlayer(serverPlayer);
                         }
                         return InteractionResult.SUCCESS;
+                    }
+                }
+            }
+            return InteractionResult.PASS;
+        });
+
+        // 2b. Wand Right-Click in Air: Shift = Clear Selection
+        UseItemCallback.EVENT.register((player, world, hand) -> {
+            if (player instanceof ServerPlayer serverPlayer && !world.isClientSide()) {
+                if (player.isShiftKeyDown() || player.isCrouching()) {
+                    if (player.getItemInHand(hand).is(ArenaModConfig.WAND_ITEM)) {
+                        MinecraftServer server = serverPlayer.level().getServer();
+                        if (server != null && server.getPlayerList().isOp(serverPlayer.nameAndId()) && SelectionManager.isWandEnabled(player.getUUID())) {
+                            SelectionManager.clearSelection(serverPlayer);
+                            ModPackets.sendSyncToPlayer(serverPlayer);
+                            return InteractionResult.SUCCESS;
+                        }
                     }
                 }
             }
@@ -77,18 +99,15 @@ public class PlayerEventListener {
         });
 
         // 5. Connection Events
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> PlayerStateManager.onPlayerJoin(handler.getPlayer()));
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            PlayerStateManager.onPlayerJoin(handler.getPlayer());
+            ModPackets.sendSyncToPlayer(handler.getPlayer());
+        });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             MatchManager.onPlayerDisconnect(handler.getPlayer());
             if (SetupSession.isInSetup(handler.getPlayer().getUUID())) {
                 SetupSession.finishSetup(handler.getPlayer());
             }
-        });
-
-        // Under connection events:
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-            PlayerStateManager.onPlayerJoin(handler.getPlayer());
-            ModPackets.sendSyncToPlayer(handler.getPlayer()); // Syncs immediately upon loading in
         });
     }
 }
