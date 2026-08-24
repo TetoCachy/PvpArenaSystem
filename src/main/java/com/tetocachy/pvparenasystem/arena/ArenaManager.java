@@ -8,6 +8,7 @@ import com.tetocachy.pvparenasystem.dimension.ModDimensions;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.LevelResource;
 
@@ -79,17 +80,29 @@ public class ArenaManager {
         arenaOffsetIndex++;
 
         ServerLevel arenaLevel = ModDimensions.getArenaLevel(server);
-        BlockPos targetMin = new BlockPos(targetOffsetX, targetOffsetY, targetOffsetZ);
+        BlockPos targetMin = new BlockPos(targetOffsetX, targetOffsetY - 1, targetOffsetZ);
         BlockPos targetMax = new BlockPos(targetOffsetX + sizeX - 1, targetOffsetY + sizeY - 1, targetOffsetZ + sizeZ - 1);
 
-        // Copy blocks to arena dimension
+        // Copy blocks & generate bedrock under non-air columns only
         for (int x = 0; x < sizeX; x++) {
-            for (int y = 0; y < sizeY; y++) {
-                for (int z = 0; z < sizeZ; z++) {
+            for (int z = 0; z < sizeZ; z++) {
+                boolean hasNonAirBlock = false;
+                for (int y = 0; y < sizeY; y++) {
                     BlockPos src = min.offset(x, y, z);
-                    BlockPos dest = targetMin.offset(x, y, z);
+                    BlockPos dest = new BlockPos(targetOffsetX + x, targetOffsetY + y, targetOffsetZ + z);
                     BlockState state = sourceLevel.getBlockState(src);
                     arenaLevel.setBlock(dest, state, 2);
+                    if (!state.isAir()) {
+                        hasNonAirBlock = true;
+                    }
+                }
+
+                // Place bedrock under blocks, leave void/air otherwise
+                BlockPos bedrockPos = new BlockPos(targetOffsetX + x, targetOffsetY - 1, targetOffsetZ + z);
+                if (hasNonAirBlock) {
+                    arenaLevel.setBlock(bedrockPos, Blocks.BEDROCK.defaultBlockState(), 2);
+                } else {
+                    arenaLevel.setBlock(bedrockPos, Blocks.AIR.defaultBlockState(), 2);
                 }
             }
         }
