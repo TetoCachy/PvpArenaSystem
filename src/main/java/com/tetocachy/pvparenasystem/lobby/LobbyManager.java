@@ -31,14 +31,18 @@ public class LobbyManager {
         MinecraftServer server = host.level().getServer();
         host.sendSystemMessage(Component.literal("§a[Lobby] Lobby created for §e" + (arena != null ? arena.getDisplayName() : "Arena") + "§a!"), false);
 
-        // Pull Party Members Automatically
         if (party != null && party.getLeader().equals(host.getUUID()) && server != null) {
             for (UUID mUuid : party.getMembers()) {
                 if (!mUuid.equals(host.getUUID())) {
                     ServerPlayer mp = server.getPlayerList().getPlayer(mUuid);
                     if (mp != null) {
                         leaveCurrentLobby(mp, server);
-                        lobby.joinTeam(mUuid, 1);
+                        int targetTeam = lobby.findAvailableTeam();
+                        if (targetTeam > 0) {
+                            lobby.joinTeam(mUuid, targetTeam);
+                        } else {
+                            lobby.joinSpectator(mUuid);
+                        }
                         playerToLobby.put(mUuid, lobby.getLobbyId());
                         mp.sendSystemMessage(Component.literal("§a[Lobby] Joined leader's lobby!"), false);
                     }
@@ -49,34 +53,77 @@ public class LobbyManager {
         return lobby;
     }
 
-    public static void joinLobby(ServerPlayer player, UUID lobbyId, int teamIndex, MinecraftServer server) {
+    public static boolean joinLobby(ServerPlayer player, UUID lobbyId, int preferredTeam, MinecraftServer server) {
         Party party = PartyManager.getParty(player.getUUID());
         if (party != null && !party.getLeader().equals(player.getUUID())) {
             player.sendSystemMessage(Component.literal("§c[Party] Only the party leader can join a lobby!"), false);
-            return;
+            return false;
         }
 
         ArenaLobby lobby = lobbies.get(lobbyId);
-        if (lobby != null) {
-            leaveCurrentLobby(player, server);
-            if (lobby.joinTeam(player.getUUID(), teamIndex)) {
-                playerToLobby.put(player.getUUID(), lobbyId);
-                lobby.broadcast(server, "§e[Lobby] " + player.getScoreboardName() + " joined Team " + teamIndex + "!");
+        if (lobby == null) {
+            player.sendSystemMessage(Component.literal("§c[Lobby] Lobby no longer exists!"), false);
+            return false;
+        }
 
-                // Pull party members with leader
-                if (party != null && party.getLeader().equals(player.getUUID())) {
-                    for (UUID mUuid : party.getMembers()) {
-                        if (!mUuid.equals(player.getUUID())) {
-                            ServerPlayer mp = server.getPlayerList().getPlayer(mUuid);
-                            if (mp != null) {
-                                leaveCurrentLobby(mp, server);
-                                lobby.joinTeam(mUuid, teamIndex);
-                                playerToLobby.put(mUuid, lobbyId);
+        int targetTeam = preferredTeam;
+        List<UUID> slot = lobby.getTeamSlots().get(targetTeam);
+        if (slot == null || slot.size() >= lobby.getPlayersPerTeam()) {
+            targetTeam = lobby.findAvailableTeam();
+        }
+
+        if (targetTeam <= 0) {
+            player.sendSystemMessage(Component.literal("§c[Lobby] This lobby is full! You can join as a spectator instead."), false);
+            return false;
+        }
+
+        leaveCurrentLobby(player, server);
+        if (lobby.joinTeam(player.getUUID(), targetTeam)) {
+            playerToLobby.put(player.getUUID(), lobbyId);
+            lobby.broadcast(server, "§e[Lobby] " + player.getScoreboardName() + " joined Team " + targetTeam + "!");
+
+            if (party != null && party.getLeader().equals(player.getUUID())) {
+                for (UUID mUuid : party.getMembers()) {
+                    if (!mUuid.equals(player.getUUID())) {
+                        ServerPlayer mp = server.getPlayerList().getPlayer(mUuid);
+                        if (mp != null) {
+                            int memberTeam = lobby.findAvailableTeam();
+                            leaveCurrentLobby(mp, server);
+                            if (memberTeam > 0) {
+                                lobby.joinTeam(mUuid, memberTeam);
+                            } else {
+                                lobby.joinSpectator(mUuid);
                             }
+                            playerToLobby.put(mUuid, lobbyId);
                         }
                     }
                 }
             }
+            return true;
+        }
+        return false;
+    }
+
+    public static void joinAsSpectator(ServerPlayer player, UUID lobbyId, MinecraftServer server) {
+        ArenaLobby lobby = lobbies.get(lobbyId);
+        if (lobby == null) {
+            player.sendSystemMessage(Component.literal("§c[Lobby] Lobby no longer exists!"), false);
+            return;
+        }
+
+        leaveCurrentLobby(player, server);
+        lobby.joinSpectator(player.getUUID());
+        playerToLobby.put(player.getUUID(), lobbyId);
+        lobby.broadcast(server, "§7[Lobby] " + player.getScoreboardName() + " joined as a spectator.");
+        player.sendSystemMessage(Component.literal("§a[Lobby] You are now spectating this lobby."), false);
+    }
+
+    public static void becomeSpectator(ServerPlayer player, MinecraftServer server) {
+        ArenaLobby lobby = getPlayerLobby(player.getUUID());
+        if (lobby != null) {
+            lobby.joinSpectator(player.getUUID());
+            lobby.broadcast(server, "§7[Lobby] " + player.getScoreboardName() + " is now a spectator.");
+            player.sendSystemMessage(Component.literal("§e[Lobby] You switched to spectator mode."), false);
         }
     }
 
@@ -85,6 +132,8 @@ public class LobbyManager {
         if (lobby != null) {
             if (lobby.joinTeam(player.getUUID(), newTeamIndex)) {
                 lobby.broadcast(server, "§e[Lobby] " + player.getScoreboardName() + " switched to Team " + newTeamIndex + "!");
+            } else {
+                player.sendSystemMessage(Component.literal("§c[Lobby] Team " + newTeamIndex + " is full!"), false);
             }
         }
     }

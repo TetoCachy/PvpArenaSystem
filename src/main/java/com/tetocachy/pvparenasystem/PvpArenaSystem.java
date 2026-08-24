@@ -35,8 +35,8 @@ public class PvpArenaSystem implements ModInitializer {
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 			ArenaCommand.register(dispatcher);
 			KitCommand.register(dispatcher);
-			DuelCommand.register(dispatcher);
 			PartyCommand.register(dispatcher);
+			MenuCommand.register(dispatcher);
 		});
 
 		// 4. Server Lifecycle Hooks
@@ -50,16 +50,9 @@ public class PvpArenaSystem implements ModInitializer {
 			PlayerStateManager.emergencyRestoreAll(server);
 		});
 
+		// 5. Packets
 		ModPackets.registerCommon();
 		ModPackets.registerServerReceivers();
-
-		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-			ArenaCommand.register(dispatcher);
-			KitCommand.register(dispatcher);
-			DuelCommand.register(dispatcher);
-			PartyCommand.register(dispatcher);
-			MenuCommand.register(dispatcher); // Registers /pvp and /menu
-		});
 	}
 
 	public static Identifier id(String path) {

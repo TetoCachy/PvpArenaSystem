@@ -1,12 +1,6 @@
 package com.tetocachy.pvparenasystem.command;
 
 import com.mojang.brigadier.CommandDispatcher;
-import com.mojang.brigadier.arguments.StringArgumentType;
-import com.tetocachy.pvparenasystem.arena.Arena;
-import com.tetocachy.pvparenasystem.arena.ArenaManager;
-import com.tetocachy.pvparenasystem.kit.Kit;
-import com.tetocachy.pvparenasystem.kit.KitManager;
-import com.tetocachy.pvparenasystem.match.MatchManager;
 import com.tetocachy.pvparenasystem.party.Party;
 import com.tetocachy.pvparenasystem.party.PartyManager;
 import net.minecraft.commands.CommandSourceStack;
@@ -14,8 +8,6 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
-
-import java.util.*;
 
 public class PartyCommand {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
@@ -45,37 +37,6 @@ public class PartyCommand {
                             PartyManager.leaveParty(player, ctx.getSource().getServer());
                             return 1;
                         }))
-                .then(Commands.literal("duel")
-                        .then(Commands.argument("targetLeader", EntityArgument.player())
-                                .then(Commands.argument("kit", StringArgumentType.word())
-                                        .executes(ctx -> {
-                                            ServerPlayer leader1 = ctx.getSource().getPlayerOrException();
-                                            ServerPlayer leader2 = EntityArgument.getPlayer(ctx, "targetLeader");
-                                            String kitName = StringArgumentType.getString(ctx, "kit");
-
-                                            Party p1 = PartyManager.getParty(leader1.getUUID());
-                                            Party p2 = PartyManager.getParty(leader2.getUUID());
-
-                                            if (p1 == null || p2 == null) {
-                                                leader1.sendSystemMessage(Component.literal("§cBoth teams must be in a party!"), false);
-                                                return 0;
-                                            }
-
-                                            Arena arena = ArenaManager.getAvailableArena(null);
-                                            if (arena == null) {
-                                                leader1.sendSystemMessage(Component.literal("§cNo available PvP arenas!"), false);
-                                                return 0;
-                                            }
-
-                                            Kit kit = KitManager.getKit(kitName);
-
-                                            Map<Integer, List<UUID>> teams = new HashMap<>();
-                                            teams.put(1, new ArrayList<>(p1.getMembers()));
-                                            teams.put(2, new ArrayList<>(p2.getMembers()));
-
-                                            MatchManager.createMatch(ctx.getSource().getServer(), arena, kit, 1, teams);
-                                            return 1;
-                                        }))))
         );
     }
 }

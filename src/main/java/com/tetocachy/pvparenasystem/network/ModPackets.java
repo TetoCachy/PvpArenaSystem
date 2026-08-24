@@ -10,6 +10,9 @@ import com.tetocachy.pvparenasystem.kit.Kit;
 import com.tetocachy.pvparenasystem.kit.KitManager;
 import com.tetocachy.pvparenasystem.lobby.ArenaLobby;
 import com.tetocachy.pvparenasystem.lobby.LobbyManager;
+import com.tetocachy.pvparenasystem.match.ArenaMatch;
+import com.tetocachy.pvparenasystem.match.MatchManager;
+import com.tetocachy.pvparenasystem.match.TeamData;
 import com.tetocachy.pvparenasystem.party.Party;
 import com.tetocachy.pvparenasystem.party.PartyManager;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
@@ -103,10 +106,27 @@ public class ModPackets {
             }
         }
 
+        List<S2CSyncArenaDataPayload.OngoingMatchInfo> activeMatches = new ArrayList<>();
+        for (ArenaMatch m : MatchManager.getActiveMatches()) {
+            int totalP = 0;
+            for (TeamData td : m.getTeams().values()) {
+                totalP += td.getMembers().size();
+            }
+            activeMatches.add(new S2CSyncArenaDataPayload.OngoingMatchInfo(
+                    m.getMatchId().toString(),
+                    m.getArena().getDisplayName(),
+                    m.getKit() != null ? m.getKit().getDisplayName() : "Default Kit",
+                    m.getCurrentRound(),
+                    m.getRoundsToWin() * 2 - 1,
+                    totalP,
+                    m.getSpectators().size()
+            ));
+        }
+
         S2CSyncArenaDataPayload sync = new S2CSyncArenaDataPayload(
                 isAdmin, inSetup, editingArena != null ? editingArena.getId() : "",
                 SelectionManager.getPos1(player.getUUID()), SelectionManager.getPos2(player.getUUID()),
-                players, kits, arenas, lobbies, currentLobbyInfo, partyInfo, pubParties
+                players, kits, arenas, lobbies, currentLobbyInfo, partyInfo, pubParties, activeMatches
         );
 
         ServerPlayNetworking.send(player, sync);
@@ -123,11 +143,18 @@ public class ModPackets {
             }
             teams.add(new S2CSyncArenaDataPayload.TeamSlotInfo(i, names));
         }
+
+        List<String> specNames = new ArrayList<>();
+        for (UUID u : l.getSpectators()) {
+            ServerPlayer p = server.getPlayerList().getPlayer(u);
+            if (p != null) specNames.add(p.getScoreboardName());
+        }
+
         return new S2CSyncArenaDataPayload.LobbyInfo(
                 l.getLobbyId().toString(), l.getHostName(),
                 l.getArena() != null ? l.getArena().getDisplayName() : "Any Arena",
                 l.getKit() != null ? l.getKit().getDisplayName() : "Default Kit",
-                l.getTeamCount(), l.getPlayersPerTeam(), l.getRounds(), teams
+                l.getTeamCount(), l.getPlayersPerTeam(), l.getRounds(), teams, specNames
         );
     }
 
@@ -149,9 +176,16 @@ public class ModPackets {
             case "LOBBY_JOIN" -> {
                 try {
                     UUID lId = UUID.fromString(payload.param1());
-                    LobbyManager.joinLobby(player, lId, Math.max(1, payload.intParam1()), server);
+                    LobbyManager.joinLobby(player, lId, Math.max(0, payload.intParam1()), server);
                 } catch (Exception ignored) {}
             }
+            case "LOBBY_JOIN_SPECTATOR" -> {
+                try {
+                    UUID lId = UUID.fromString(payload.param1());
+                    LobbyManager.joinAsSpectator(player, lId, server);
+                } catch (Exception ignored) {}
+            }
+            case "LOBBY_BECOME_SPECTATOR" -> LobbyManager.becomeSpectator(player, server);
             case "LOBBY_SWITCH_TEAM" -> LobbyManager.switchTeam(player, payload.intParam1(), server);
             case "LOBBY_LEAVE" -> LobbyManager.leaveCurrentLobby(player, server);
             case "LOBBY_START" -> {
@@ -164,6 +198,13 @@ public class ModPackets {
                         player.sendSystemMessage(Component.literal("§c[Lobby] At least 2 teams must have players to start!"), false);
                     }
                 }
+            }
+
+            case "MATCH_SPECTATE" -> {
+                try {
+                    UUID mId = UUID.fromString(payload.param1());
+                    MatchManager.spectateMatch(player, mId);
+                } catch (Exception ignored) {}
             }
 
             case "PARTY_CREATE" -> PartyManager.createParty(player);

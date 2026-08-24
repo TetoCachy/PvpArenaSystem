@@ -22,16 +22,18 @@ public record S2CSyncArenaDataPayload(
         List<LobbyInfo> lobbies,
         LobbyInfo currentLobby,
         PartyInfo party,
-        List<PublicPartyInfo> publicParties
+        List<PublicPartyInfo> publicParties,
+        List<OngoingMatchInfo> activeMatches
 ) implements CustomPacketPayload {
     public static final Type<S2CSyncArenaDataPayload> TYPE = new Type<>(PvpArenaSystem.id("s2c_sync_arena_data"));
 
     public record KitInfo(String id, String displayName, List<ItemStack> previewItems) {}
     public record ArenaInfo(String id, String displayName, int status, int maxTeams, int maxPlayersPerTeam, int teamSpawnCount) {}
-    public record LobbyInfo(String lobbyId, String hostName, String arenaName, String kitName, int teamCount, int playersPerTeam, int rounds, List<TeamSlotInfo> teams) {}
+    public record LobbyInfo(String lobbyId, String hostName, String arenaName, String kitName, int teamCount, int playersPerTeam, int rounds, List<TeamSlotInfo> teams, List<String> spectatorNames) {}
     public record TeamSlotInfo(int teamIndex, List<String> memberNames) {}
     public record PartyInfo(boolean inParty, boolean isLeader, boolean isPublic, String partyName, String leaderName, int maxMembers, List<String> members) {}
     public record PublicPartyInfo(String partyName, String leaderName, int memberCount, int maxMembers) {}
+    public record OngoingMatchInfo(String matchId, String arenaName, String kitName, int currentRound, int totalRounds, int playerCount, int spectatorCount) {}
 
     public static final StreamCodec<RegistryFriendlyByteBuf, S2CSyncArenaDataPayload> STREAM_CODEC = StreamCodec.of(
             (buf, p) -> {
@@ -47,7 +49,6 @@ public record S2CSyncArenaDataPayload(
                 buf.writeInt(p.onlinePlayers().size());
                 for (String pl : p.onlinePlayers()) buf.writeUtf(pl);
 
-                // Kits with item stack list encoding
                 buf.writeInt(p.kits().size());
                 for (KitInfo k : p.kits()) {
                     buf.writeUtf(k.id());
@@ -90,6 +91,17 @@ public record S2CSyncArenaDataPayload(
                     buf.writeInt(pub.memberCount());
                     buf.writeInt(pub.maxMembers());
                 }
+
+                buf.writeInt(p.activeMatches().size());
+                for (OngoingMatchInfo m : p.activeMatches()) {
+                    buf.writeUtf(m.matchId());
+                    buf.writeUtf(m.arenaName());
+                    buf.writeUtf(m.kitName());
+                    buf.writeInt(m.currentRound());
+                    buf.writeInt(m.totalRounds());
+                    buf.writeInt(m.playerCount());
+                    buf.writeInt(m.spectatorCount());
+                }
             },
             buf -> {
                 boolean isAdmin = buf.readBoolean();
@@ -103,7 +115,6 @@ public record S2CSyncArenaDataPayload(
                 List<String> players = new ArrayList<>(pCount);
                 for (int i = 0; i < pCount; i++) players.add(buf.readUtf());
 
-                // Kits with item stack list decoding
                 int kCount = buf.readInt();
                 List<KitInfo> kits = new ArrayList<>(kCount);
                 for (int i = 0; i < kCount; i++) {
@@ -146,7 +157,21 @@ public record S2CSyncArenaDataPayload(
                     pubParties.add(new PublicPartyInfo(buf.readUtf(), buf.readUtf(), buf.readInt(), buf.readInt()));
                 }
 
-                return new S2CSyncArenaDataPayload(isAdmin, inSetup, editingArenaId, p1, p2, players, kits, arenas, lobbies, currentLobby, party, pubParties);
+                int mSize = buf.readInt();
+                List<OngoingMatchInfo> activeMatches = new ArrayList<>(mSize);
+                for (int i = 0; i < mSize; i++) {
+                    activeMatches.add(new OngoingMatchInfo(
+                            buf.readUtf(),
+                            buf.readUtf(),
+                            buf.readUtf(),
+                            buf.readInt(),
+                            buf.readInt(),
+                            buf.readInt(),
+                            buf.readInt()
+                    ));
+                }
+
+                return new S2CSyncArenaDataPayload(isAdmin, inSetup, editingArenaId, p1, p2, players, kits, arenas, lobbies, currentLobby, party, pubParties, activeMatches);
             }
     );
 
@@ -164,6 +189,8 @@ public record S2CSyncArenaDataPayload(
             buf.writeInt(t.memberNames().size());
             for (String name : t.memberNames()) buf.writeUtf(name);
         }
+        buf.writeInt(l.spectatorNames().size());
+        for (String s : l.spectatorNames()) buf.writeUtf(s);
     }
 
     private static LobbyInfo readLobby(RegistryFriendlyByteBuf buf) {
@@ -183,7 +210,10 @@ public record S2CSyncArenaDataPayload(
             for (int j = 0; j < mCount; j++) members.add(buf.readUtf());
             teams.add(new TeamSlotInfo(tIndex, members));
         }
-        return new LobbyInfo(id, host, arena, kit, tc, ppt, rounds, teams);
+        int sSize = buf.readInt();
+        List<String> spectators = new ArrayList<>(sSize);
+        for (int i = 0; i < sSize; i++) spectators.add(buf.readUtf());
+        return new LobbyInfo(id, host, arena, kit, tc, ppt, rounds, teams, spectators);
     }
 
     @Override

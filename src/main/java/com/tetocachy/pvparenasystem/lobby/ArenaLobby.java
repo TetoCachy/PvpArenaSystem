@@ -21,6 +21,7 @@ public class ArenaLobby {
     private int rounds = 3;
 
     private final Map<Integer, List<UUID>> teamSlots = new ConcurrentHashMap<>();
+    private final Set<UUID> spectators = ConcurrentHashMap.newKeySet();
 
     public ArenaLobby(UUID hostUuid, String hostName, Arena arena, Kit kit, int teamCount, int playersPerTeam, int rounds) {
         this.hostUuid = hostUuid;
@@ -38,19 +39,57 @@ public class ArenaLobby {
     }
 
     public synchronized boolean joinTeam(UUID playerUuid, int targetTeam) {
-        leave(playerUuid);
         List<UUID> slot = teamSlots.get(targetTeam);
+        // Only remove player if the target team actually has an open slot!
         if (slot != null && slot.size() < playersPerTeam) {
+            leave(playerUuid);
             slot.add(playerUuid);
             return true;
         }
         return false;
     }
 
+    public synchronized void joinSpectator(UUID playerUuid) {
+        leave(playerUuid);
+        spectators.add(playerUuid);
+    }
+
+    public synchronized int findAvailableTeam() {
+        int bestTeam = -1;
+        int minPlayers = Integer.MAX_VALUE;
+        for (int i = 1; i <= teamCount; i++) {
+            List<UUID> slot = teamSlots.get(i);
+            if (slot != null && slot.size() < playersPerTeam) {
+                if (slot.size() < minPlayers) {
+                    minPlayers = slot.size();
+                    bestTeam = i;
+                }
+            }
+        }
+        return bestTeam;
+    }
+
+    public synchronized int getTotalPlayerCount() {
+        int total = 0;
+        for (List<UUID> slot : teamSlots.values()) {
+            total += slot.size();
+        }
+        return total;
+    }
+
+    public int getMaxCapacity() {
+        return teamCount * playersPerTeam;
+    }
+
+    public boolean isFull() {
+        return getTotalPlayerCount() >= getMaxCapacity();
+    }
+
     public synchronized void leave(UUID playerUuid) {
         for (List<UUID> slot : teamSlots.values()) {
             slot.remove(playerUuid);
         }
+        spectators.remove(playerUuid);
     }
 
     public boolean canStart() {
@@ -70,7 +109,7 @@ public class ArenaLobby {
             }
         }
         broadcast(server, "§6§l[Lobby] §aStarting match in §e" + arena.getDisplayName() + "§a!");
-        MatchManager.createMatch(server, arena, kit, rounds, activeTeams);
+        MatchManager.createMatch(server, arena, kit, rounds, activeTeams, new ArrayList<>(spectators));
     }
 
     public void broadcast(MinecraftServer server, String message) {
@@ -80,6 +119,10 @@ public class ArenaLobby {
                 ServerPlayer p = server.getPlayerList().getPlayer(u);
                 if (p != null) p.sendSystemMessage(comp, false);
             }
+        }
+        for (UUID u : spectators) {
+            ServerPlayer p = server.getPlayerList().getPlayer(u);
+            if (p != null) p.sendSystemMessage(comp, false);
         }
     }
 
@@ -92,4 +135,5 @@ public class ArenaLobby {
     public int getPlayersPerTeam() { return playersPerTeam; }
     public int getRounds() { return rounds; }
     public Map<Integer, List<UUID>> getTeamSlots() { return teamSlots; }
+    public Set<UUID> getSpectators() { return spectators; }
 }

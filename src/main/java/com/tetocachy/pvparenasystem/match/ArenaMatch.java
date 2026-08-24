@@ -29,6 +29,7 @@ public class ArenaMatch {
     private final int roundsToWin;
     private final Map<Integer, TeamData> teams = new HashMap<>();
     private final Set<UUID> allPlayers = new HashSet<>();
+    private final Set<UUID> spectators = ConcurrentHashMap.newKeySet();
     private final Map<UUID, Vec3> spawnFreezePositions = new ConcurrentHashMap<>();
 
     private MatchState state = MatchState.WAITING;
@@ -38,10 +39,18 @@ public class ArenaMatch {
     private int currentRound = 1;
 
     public ArenaMatch(MinecraftServer server, Arena arena, Kit kit, int roundsToWin, Map<Integer, List<UUID>> teamAssignments) {
+        this(server, arena, kit, roundsToWin, teamAssignments, Collections.emptyList());
+    }
+
+    public ArenaMatch(MinecraftServer server, Arena arena, Kit kit, int roundsToWin, Map<Integer, List<UUID>> teamAssignments, List<UUID> initialSpectators) {
         this.server = server;
         this.arena = arena;
         this.kit = kit;
         this.roundsToWin = Math.max(1, roundsToWin);
+
+        if (initialSpectators != null) {
+            this.spectators.addAll(initialSpectators);
+        }
 
         ChatFormatting[] colors = {ChatFormatting.RED, ChatFormatting.BLUE, ChatFormatting.GREEN, ChatFormatting.YELLOW, ChatFormatting.AQUA, ChatFormatting.LIGHT_PURPLE, ChatFormatting.GOLD, ChatFormatting.WHITE};
         int cIndex = 0;
@@ -65,7 +74,34 @@ public class ArenaMatch {
             }
         }
 
+        for (UUID uuid : spectators) {
+            ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
+            if (sp != null) {
+                PlayerStateManager.saveSnapshot(sp, "MATCH_SPEC_" + matchId);
+                sp.setGameMode(GameType.SPECTATOR);
+                teleportToSpectatorSpawn(sp);
+                sp.sendSystemMessage(Component.literal("§a[PvpArena] You are spectating the match in §e" + arena.getDisplayName() + "§a!"), false);
+            }
+        }
+
         prepareRound();
+    }
+
+    public void addSpectator(ServerPlayer player) {
+        PlayerStateManager.saveSnapshot(player, "MATCH_SPEC_" + matchId);
+        spectators.add(player.getUUID());
+        MatchManager.registerSpectator(player.getUUID(), matchId);
+        player.setGameMode(GameType.SPECTATOR);
+        teleportToSpectatorSpawn(player);
+        player.sendSystemMessage(Component.literal("§a[PvpArena] Joined as spectator in §e" + arena.getDisplayName() + "§a!"), false);
+        broadcast("§7[Spectator] §e" + player.getScoreboardName() + " §7joined to watch.");
+    }
+
+    public void removeSpectator(ServerPlayer player) {
+        spectators.remove(player.getUUID());
+        MatchManager.unregisterSpectator(player.getUUID());
+        PlayerStateManager.restorePlayer(player);
+        player.sendSystemMessage(Component.literal("§c[PvpArena] Left spectator mode."), false);
     }
 
     private void prepareRound() {
@@ -102,11 +138,18 @@ public class ArenaMatch {
             }
         }
 
+        for (UUID uuid : spectators) {
+            ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
+            if (sp != null) {
+                teleportToSpectatorSpawn(sp);
+            }
+        }
+
         broadcast("§6[PvpArena] §eRound " + currentRound + " / " + (roundsToWin * 2 - 1) + " is starting!");
     }
 
     public void tick() {
-        // 1. Boundary & Out-of-Bounds Check
+        // Void and spectator bounds
         for (UUID uuid : allPlayers) {
             ServerPlayer p = server.getPlayerList().getPlayer(uuid);
             if (p == null) continue;
@@ -114,7 +157,6 @@ public class ArenaMatch {
             TeamData team = getPlayerTeam(uuid);
             boolean isAlive = team != null && team.isAlive(uuid);
 
-            // Hard Void Rescue: Prevents falling below world bounds
             if (arena.isBelowVoid(p.getY())) {
                 if (isAlive) {
                     handlePlayerDeath(p);
@@ -124,7 +166,6 @@ public class ArenaMatch {
                 continue;
             }
 
-            // Horizontal Boundary Containment
             if (isAlive && state == MatchState.IN_PROGRESS) {
                 if (!arena.isInsideBoundary(p.getX(), p.getY(), p.getZ())) {
                     if (p.getY() < arena.getMinPos().getY()) {
@@ -145,7 +186,13 @@ public class ArenaMatch {
             }
         }
 
-        // 2. Pre-match countdown freeze
+        for (UUID uuid : spectators) {
+            ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
+            if (sp != null && (sp.getY() < -30 || sp.distanceToSqr(arena.getCenterVec()) > 40000)) {
+                teleportToSpectatorSpawn(sp);
+            }
+        }
+
         if (state == MatchState.COUNTDOWN) {
             for (UUID uuid : allPlayers) {
                 ServerPlayer p = server.getPlayerList().getPlayer(uuid);
@@ -268,6 +315,14 @@ public class ArenaMatch {
             }
         }
 
+        for (UUID uuid : spectators) {
+            ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
+            if (sp != null) {
+                PlayerStateManager.restorePlayer(sp);
+                sp.sendSystemMessage(Component.literal("§a[PvpArena] Match ended. Exited spectator mode."), false);
+            }
+        }
+
         ServerLevel arenaLevel = ModDimensions.getArenaLevel(server);
         arena.rollbackMap(arenaLevel);
         arena.setInUse(false);
@@ -283,10 +338,15 @@ public class ArenaMatch {
     }
 
     public boolean hasPlayer(UUID uuid) { return allPlayers.contains(uuid); }
+    public boolean hasSpectator(UUID uuid) { return spectators.contains(uuid); }
 
     public void broadcast(String message) {
         Component comp = Component.literal(message);
         for (UUID uuid : allPlayers) {
+            ServerPlayer p = server.getPlayerList().getPlayer(uuid);
+            if (p != null) p.sendSystemMessage(comp, false);
+        }
+        for (UUID uuid : spectators) {
             ServerPlayer p = server.getPlayerList().getPlayer(uuid);
             if (p != null) p.sendSystemMessage(comp, false);
         }
@@ -295,9 +355,11 @@ public class ArenaMatch {
     public void broadcastTitle(String title, String subtitle) {
         for (UUID uuid : allPlayers) {
             ServerPlayer p = server.getPlayerList().getPlayer(uuid);
-            if (p != null) {
-                p.sendSystemMessage(Component.literal(title + " §r- " + subtitle), true);
-            }
+            if (p != null) p.sendSystemMessage(Component.literal(title + " §r- " + subtitle), true);
+        }
+        for (UUID uuid : spectators) {
+            ServerPlayer p = server.getPlayerList().getPlayer(uuid);
+            if (p != null) p.sendSystemMessage(Component.literal(title + " §r- " + subtitle), true);
         }
     }
 
@@ -312,9 +374,20 @@ public class ArenaMatch {
                 p.level().playSound(null, p.getX(), p.getY(), p.getZ(), sound, SoundSource.PLAYERS, volume, pitch);
             }
         }
+        for (UUID uuid : spectators) {
+            ServerPlayer p = server.getPlayerList().getPlayer(uuid);
+            if (p != null) {
+                p.level().playSound(null, p.getX(), p.getY(), p.getZ(), sound, SoundSource.PLAYERS, volume, pitch);
+            }
+        }
     }
 
     public MatchState getState() { return state; }
     public UUID getMatchId() { return matchId; }
     public Arena getArena() { return arena; }
+    public Kit getKit() { return kit; }
+    public int getCurrentRound() { return currentRound; }
+    public int getRoundsToWin() { return roundsToWin; }
+    public Map<Integer, TeamData> getTeams() { return teams; }
+    public Set<UUID> getSpectators() { return spectators; }
 }
