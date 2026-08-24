@@ -17,4 +17,7 @@ public interface ArenaScreenTab {
     void init(int x, int y, int width, int height, Consumer<AbstractWidget> addWidget);
     void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick);
     default void tick() {}
+    default boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        return false;
+    }
 }

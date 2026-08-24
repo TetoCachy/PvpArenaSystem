@@ -1,6 +1,7 @@
 package com.tetocachy.pvparenasystem.client.gui.tabs;
 
 import com.tetocachy.pvparenasystem.client.data.ClientArenaCache;
+import com.tetocachy.pvparenasystem.client.gui.ArenaMainMenuScreen;
 import com.tetocachy.pvparenasystem.client.gui.ArenaScreenTab;
 import com.tetocachy.pvparenasystem.network.C2SActionPayload;
 import com.tetocachy.pvparenasystem.network.S2CSyncArenaDataPayload;
@@ -17,12 +18,19 @@ import java.util.List;
 import java.util.function.Consumer;
 
 public class LobbiesTab implements ArenaScreenTab {
+    private final ArenaMainMenuScreen parentScreen;
     private int contentX, contentY, contentW, contentH;
     private int selectedArenaIndex = 0;
     private int selectedKitIndex = 0;
     private int teamCount = 2;
     private int playersPerTeam = 2;
     private int rounds = 3;
+
+    private int teamScrollIndex = 0;
+
+    public LobbiesTab(ArenaMainMenuScreen parentScreen) {
+        this.parentScreen = parentScreen;
+    }
 
     @Override
     public Component getTitle() { return Component.literal("Lobbies & Matchmaking"); }
@@ -42,13 +50,41 @@ public class LobbiesTab implements ArenaScreenTab {
         if (data.currentLobby() != null) {
             // MMORPG LOBBY ROOM VIEW
             S2CSyncArenaDataPayload.LobbyInfo l = data.currentLobby();
-            int teamsNum = Math.max(1, l.teams().size());
-            int gap = 4;
-            int cardW = (width - 8 - ((teamsNum - 1) * gap)) / teamsNum;
+            int totalTeams = Math.max(1, l.teams().size());
+            int gap = 6;
+            int viewW = width - 8;
 
-            for (int i = 0; i < l.teams().size(); i++) {
-                final int teamIdx = i + 1;
-                int cardX = x + 4 + (i * (cardW + gap));
+            int visibleTeamsCount = Math.min(3, totalTeams);
+            int cardW = (viewW - ((visibleTeamsCount - 1) * gap)) / visibleTeamsCount;
+
+            int maxScrollIndex = Math.max(0, totalTeams - visibleTeamsCount);
+            teamScrollIndex = Math.max(0, Math.min(maxScrollIndex, teamScrollIndex));
+
+            // Paging Buttons in Header if teams exceed visible count
+            if (maxScrollIndex > 0) {
+                addWidget.accept(Button.builder(Component.literal("◀"), b -> {
+                    if (teamScrollIndex > 0) {
+                        teamScrollIndex--;
+                        parentScreen.rebuildTabContent();
+                    }
+                }).bounds(x + width - 44, y + 2, 18, 18).build());
+
+                addWidget.accept(Button.builder(Component.literal("▶"), b -> {
+                    if (teamScrollIndex < maxScrollIndex) {
+                        teamScrollIndex++;
+                        parentScreen.rebuildTabContent();
+                    }
+                }).bounds(x + width - 24, y + 2, 18, 18).build());
+            }
+
+            // Render Exactly Matching Visible Team Switch Buttons
+            for (int col = 0; col < visibleTeamsCount; col++) {
+                int teamListIdx = teamScrollIndex + col;
+                if (teamListIdx >= totalTeams) break;
+
+                final int teamIdx = teamListIdx + 1;
+                int cardX = x + 4 + (col * (cardW + gap));
+
                 Button switchBtn = Button.builder(Component.literal("Join Team " + teamIdx), b -> {
                     ClientPlayNetworking.send(new C2SActionPayload("LOBBY_SWITCH_TEAM", "", "", teamIdx, 0));
                 }).bounds(cardX, y + height - 48, cardW, 18).build();
@@ -56,7 +92,7 @@ public class LobbiesTab implements ArenaScreenTab {
             }
 
             // Spectator toggle button
-            addWidget.accept(Button.builder(Component.literal("👁 Spectate"), b -> {
+            addWidget.accept(Button.builder(Component.literal("👁 Become Spectator"), b -> {
                 ClientPlayNetworking.send(new C2SActionPayload("LOBBY_BECOME_SPECTATOR", "", "", 0, 0));
             }).bounds(x + 4, y + height - 70, width - 8, 18).build());
 
@@ -194,28 +230,60 @@ public class LobbiesTab implements ArenaScreenTab {
     }
 
     @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (!ClientArenaCache.hasData() || ClientArenaCache.currentData.currentLobby() == null) return false;
+        S2CSyncArenaDataPayload.LobbyInfo l = ClientArenaCache.currentData.currentLobby();
+        int totalTeams = Math.max(1, l.teams().size());
+        if (totalTeams <= 3) return false;
+
+        int maxScrollIndex = totalTeams - 3;
+        if (maxScrollIndex > 0 && mouseY >= contentY + 24 && mouseY <= contentY + contentH - 24) {
+            if (verticalAmount > 0 && teamScrollIndex > 0) {
+                teamScrollIndex--;
+                parentScreen.rebuildTabContent();
+                return true;
+            } else if (verticalAmount < 0 && teamScrollIndex < maxScrollIndex) {
+                teamScrollIndex++;
+                parentScreen.rebuildTabContent();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         if (!ClientArenaCache.hasData()) return;
         S2CSyncArenaDataPayload data = ClientArenaCache.currentData;
 
         if (data.currentLobby() != null) {
             S2CSyncArenaDataPayload.LobbyInfo l = data.currentLobby();
-            int teamsNum = Math.max(1, l.teams().size());
-            int gap = 4;
-            int cardW = (contentW - 8 - ((teamsNum - 1) * gap)) / teamsNum;
+            int totalTeams = Math.max(1, l.teams().size());
+            int gap = 6;
+            int viewW = contentW - 8;
 
+            int visibleTeamsCount = Math.min(3, totalTeams);
+            int cardW = (viewW - ((visibleTeamsCount - 1) * gap)) / visibleTeamsCount;
+
+            // Lobby Header
             graphics.fill(contentX + 4, contentY + 2, contentX + contentW - 4, contentY + 20, 0xF0161820);
             graphics.outline(contentX + 4, contentY + 2, contentW - 8, 18, 0xFF4A4E5C);
 
-            String header = "§6Host: §f" + l.hostName() + "  §7|  §eMap: §f" + l.arenaName() + "  §7|  §bKit: §f" + l.kitName() + "  §7|  §aBest of " + (l.rounds() * 2 - 1);
+            String header = "§6Host: §f" + l.hostName() + "  §7|  §eMap: §f" + l.arenaName() + "  §7|  §bKit: §f" + l.kitName() + "  §7|  §aBo" + (l.rounds() * 2 - 1);
+            if (totalTeams > 3) {
+                header += "  §e(" + (teamScrollIndex + 1) + "-" + (teamScrollIndex + visibleTeamsCount) + " of " + totalTeams + ")";
+            }
             graphics.text(Minecraft.getInstance().font, Component.literal(header), contentX + 8, contentY + 7, 0xFFFFFFFF, false);
 
             int cardTop = contentY + 24;
             int cardH = contentH - 98;
 
-            for (int i = 0; i < l.teams().size(); i++) {
-                S2CSyncArenaDataPayload.TeamSlotInfo t = l.teams().get(i);
-                int cardX = contentX + 4 + (i * (cardW + gap));
+            for (int col = 0; col < visibleTeamsCount; col++) {
+                int teamListIdx = teamScrollIndex + col;
+                if (teamListIdx >= totalTeams) break;
+
+                S2CSyncArenaDataPayload.TeamSlotInfo t = l.teams().get(teamListIdx);
+                int cardX = contentX + 4 + (col * (cardW + gap));
 
                 graphics.fill(cardX, cardTop, cardX + cardW, cardTop + cardH, 0xF0181A22);
                 graphics.outline(cardX, cardTop, cardW, cardH, 0xFF4A5060);
