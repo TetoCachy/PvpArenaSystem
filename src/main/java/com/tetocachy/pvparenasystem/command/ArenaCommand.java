@@ -1,11 +1,13 @@
 package com.tetocachy.pvparenasystem.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.tetocachy.pvparenasystem.admin.SelectionManager;
 import com.tetocachy.pvparenasystem.admin.SetupSession;
 import com.tetocachy.pvparenasystem.arena.Arena;
+import com.tetocachy.pvparenasystem.arena.ArenaBoundary;
 import com.tetocachy.pvparenasystem.arena.ArenaManager;
 import com.tetocachy.pvparenasystem.arena.SpawnPoint;
 import com.tetocachy.pvparenasystem.dimension.ModDimensions;
@@ -42,6 +44,66 @@ public class ArenaCommand {
 
                                     Arena arena = ArenaManager.createArenaFromSelection(ctx.getSource().getServer(), name, name, (ServerLevel) player.level(), p1, p2);
                                     SetupSession.startSetup(player, arena);
+                                    return 1;
+                                })))
+                .then(Commands.literal("border")
+                        .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                        .then(Commands.literal("mode")
+                                .then(Commands.argument("shape", StringArgumentType.word())
+                                        .executes(ctx -> {
+                                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                            Arena arena = SetupSession.getCurrentEditingArena(player.getUUID());
+                                            if (arena == null) {
+                                                player.sendSystemMessage(Component.literal("§cYou are not in arena setup mode!"), false);
+                                                return 0;
+                                            }
+                                            String s = StringArgumentType.getString(ctx, "shape").toUpperCase();
+                                            try {
+                                                ArenaBoundary.Shape shape = ArenaBoundary.Shape.valueOf(s);
+                                                arena.getBoundary().setShape(shape);
+                                                player.sendSystemMessage(Component.literal("§aBorder shape set to: §e" + shape.name()), false);
+                                                return 1;
+                                            } catch (Exception e) {
+                                                player.sendSystemMessage(Component.literal("§cInvalid shape! Choose BOX, CYLINDER, or POLYGON"), false);
+                                                return 0;
+                                            }
+                                        })))
+                        .then(Commands.literal("radius")
+                                .then(Commands.argument("value", DoubleArgumentType.doubleArg(5.0, 500.0))
+                                        .executes(ctx -> {
+                                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                            Arena arena = SetupSession.getCurrentEditingArena(player.getUUID());
+                                            if (arena == null) {
+                                                player.sendSystemMessage(Component.literal("§cYou are not in arena setup mode!"), false);
+                                                return 0;
+                                            }
+                                            double r = DoubleArgumentType.getDouble(ctx, "value");
+                                            arena.getBoundary().setRadius(r);
+                                            player.sendSystemMessage(Component.literal("§aBorder radius set to: §e" + r), false);
+                                            return 1;
+                                        })))
+                        .then(Commands.literal("addpoint")
+                                .executes(ctx -> {
+                                    ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                    Arena arena = SetupSession.getCurrentEditingArena(player.getUUID());
+                                    if (arena == null) {
+                                        player.sendSystemMessage(Component.literal("§cYou are not in arena setup mode!"), false);
+                                        return 0;
+                                    }
+                                    arena.getBoundary().addPolygonPoint(player.getX(), player.getZ());
+                                    player.sendSystemMessage(Component.literal("§aAdded polygon vertex at (" + String.format("%.1f", player.getX()) + ", " + String.format("%.1f", player.getZ()) + ") [Total: " + arena.getBoundary().getPolygonPoints().size() + "]"), false);
+                                    return 1;
+                                }))
+                        .then(Commands.literal("clearpoints")
+                                .executes(ctx -> {
+                                    ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                    Arena arena = SetupSession.getCurrentEditingArena(player.getUUID());
+                                    if (arena == null) {
+                                        player.sendSystemMessage(Component.literal("§cYou are not in arena setup mode!"), false);
+                                        return 0;
+                                    }
+                                    arena.getBoundary().clearPolygonPoints();
+                                    player.sendSystemMessage(Component.literal("§aCleared all polygon border points."), false);
                                     return 1;
                                 })))
                 .then(Commands.literal("edit")

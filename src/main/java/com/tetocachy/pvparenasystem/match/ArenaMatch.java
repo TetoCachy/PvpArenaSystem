@@ -106,6 +106,46 @@ public class ArenaMatch {
     }
 
     public void tick() {
+        // 1. Boundary & Out-of-Bounds Check
+        for (UUID uuid : allPlayers) {
+            ServerPlayer p = server.getPlayerList().getPlayer(uuid);
+            if (p == null) continue;
+
+            TeamData team = getPlayerTeam(uuid);
+            boolean isAlive = team != null && team.isAlive(uuid);
+
+            // Hard Void Rescue: Prevents falling below world bounds
+            if (arena.isBelowVoid(p.getY())) {
+                if (isAlive) {
+                    handlePlayerDeath(p);
+                } else {
+                    teleportToSpectatorSpawn(p);
+                }
+                continue;
+            }
+
+            // Horizontal Boundary Containment
+            if (isAlive && state == MatchState.IN_PROGRESS) {
+                if (!arena.isInsideBoundary(p.getX(), p.getY(), p.getZ())) {
+                    if (p.getY() < arena.getMinPos().getY()) {
+                        handlePlayerDeath(p);
+                    } else {
+                        Vec3 center = arena.getCenterVec();
+                        Vec3 dir = center.subtract(p.position()).normalize().scale(0.6);
+                        p.setDeltaMovement(dir.x, 0.25, dir.z);
+                        p.hurtMarked = true;
+                        p.sendSystemMessage(Component.literal("§c§l[!] STAY INSIDE THE ARENA BORDER!"), true);
+                        p.playSound(SoundEvents.PLAYER_HURT, 0.6F, 1.2F);
+                    }
+                }
+            } else if (!isAlive) {
+                if (p.getY() < -30 || p.distanceToSqr(arena.getCenterVec()) > 40000) {
+                    teleportToSpectatorSpawn(p);
+                }
+            }
+        }
+
+        // 2. Pre-match countdown freeze
         if (state == MatchState.COUNTDOWN) {
             for (UUID uuid : allPlayers) {
                 ServerPlayer p = server.getPlayerList().getPlayer(uuid);
@@ -159,12 +199,24 @@ public class ArenaMatch {
         player.setHealth(player.getMaxHealth());
         player.removeAllEffects();
         player.setGameMode(GameType.SPECTATOR);
-        player.setDeltaMovement(0, 0.6, 0);
-        player.hurtMarked = true;
+
+        teleportToSpectatorSpawn(player);
 
         player.sendSystemMessage(Component.literal("§c§lYOU WERE ELIMINATED!"), true);
         broadcast(playerTeam.getColor() + player.getScoreboardName() + " §7was eliminated!");
+        playSound(SoundEvents.WITHER_HURT, 0.8F, 1.5F);
         checkRoundOver();
+    }
+
+    public void teleportToSpectatorSpawn(ServerPlayer player) {
+        if (arena.getSpectatorSpawn() != null) {
+            arena.getSpectatorSpawn().teleport(player);
+        } else {
+            Vec3 center = arena.getCenterVec();
+            ServerLevel level = ModDimensions.getArenaLevel(server);
+            player.teleportTo(level, center.x, arena.getMaxPos().getY() + 4.0, center.z, Set.of(), 0.0F, 0.0F, true);
+        }
+        player.setDeltaMovement(0, 0, 0);
     }
 
     private void checkRoundOver() {
@@ -193,7 +245,7 @@ public class ArenaMatch {
             }
 
             state = MatchState.ENDING;
-            intermissionTimer = 60; // 3 seconds pause
+            intermissionTimer = 60;
             broadcastTitle("§6Round Complete", "§7Next round in 3 seconds...");
             playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
         }

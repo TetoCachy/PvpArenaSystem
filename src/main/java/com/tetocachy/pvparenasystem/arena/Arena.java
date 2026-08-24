@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.*;
 
@@ -20,6 +21,7 @@ public class Arena {
     private SpawnPoint lobbySpawn;
     private boolean inUse = false;
     private ArenaBlockSnapshot blockSnapshot;
+    private ArenaBoundary boundary;
 
     public Arena(String id, String displayName, BlockPos minPos, BlockPos maxPos) {
         this.id = id;
@@ -27,10 +29,27 @@ public class Arena {
         this.minPos = minPos;
         this.maxPos = maxPos;
         this.blockSnapshot = new ArenaBlockSnapshot(minPos, maxPos);
+        this.boundary = new ArenaBoundary(minPos, maxPos);
     }
 
     public boolean isConfigured() {
         return teamSpawns.size() >= 2 && spectatorSpawn != null;
+    }
+
+    public boolean isInsideBoundary(double x, double y, double z) {
+        return boundary == null || boundary.isInside(x, y, z);
+    }
+
+    public boolean isBelowVoid(double y) {
+        return boundary != null && boundary.isBelowVoid(y);
+    }
+
+    public Vec3 getCenterVec() {
+        return new Vec3(
+                (minPos.getX() + maxPos.getX() + 1) / 2.0,
+                minPos.getY() + 1.0,
+                (minPos.getZ() + maxPos.getZ() + 1) / 2.0
+        );
     }
 
     public void addTeamSpawn(int teamIndex, SpawnPoint spawn) {
@@ -89,6 +108,7 @@ public class Arena {
 
         if (spectatorSpawn != null) obj.add("spectatorSpawn", spectatorSpawn.toJson());
         if (lobbySpawn != null) obj.add("lobbySpawn", lobbySpawn.toJson());
+        if (boundary != null) obj.add("boundary", boundary.toJson());
 
         return obj;
     }
@@ -124,6 +144,9 @@ public class Arena {
         if (obj.has("lobbySpawn")) {
             arena.setLobbySpawn(SpawnPoint.fromJson(obj.getAsJsonObject("lobbySpawn")));
         }
+        if (obj.has("boundary")) {
+            arena.setBoundary(ArenaBoundary.fromJson(obj.getAsJsonObject("boundary"), minPos, maxPos));
+        }
 
         return arena;
     }
@@ -144,4 +167,6 @@ public class Arena {
     public boolean isInUse() { return inUse; }
     public void setInUse(boolean inUse) { this.inUse = inUse; }
     public Map<Integer, List<SpawnPoint>> getAllTeamSpawns() { return teamSpawns; }
+    public ArenaBoundary getBoundary() { return boundary; }
+    public void setBoundary(ArenaBoundary boundary) { this.boundary = boundary; }
 }

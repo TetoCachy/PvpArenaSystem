@@ -4,6 +4,7 @@ import com.tetocachy.pvparenasystem.arena.Arena;
 import com.tetocachy.pvparenasystem.kit.Kit;
 import com.tetocachy.pvparenasystem.party.Party;
 import com.tetocachy.pvparenasystem.party.PartyManager;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -15,6 +16,12 @@ public class LobbyManager {
     private static final Map<UUID, UUID> playerToLobby = new ConcurrentHashMap<>();
 
     public static ArenaLobby createLobby(ServerPlayer host, Arena arena, Kit kit, int teamCount, int playersPerTeam, int rounds) {
+        Party party = PartyManager.getParty(host.getUUID());
+        if (party != null && !party.getLeader().equals(host.getUUID())) {
+            host.sendSystemMessage(Component.literal("§c[Party] Only the party leader can create a lobby!"), false);
+            return null;
+        }
+
         leaveCurrentLobby(host, host.level().getServer());
 
         ArenaLobby lobby = new ArenaLobby(host.getUUID(), host.getScoreboardName(), arena, kit, teamCount, playersPerTeam, rounds);
@@ -22,10 +29,9 @@ public class LobbyManager {
         playerToLobby.put(host.getUUID(), lobby.getLobbyId());
 
         MinecraftServer server = host.level().getServer();
-        host.sendSystemMessage(net.minecraft.network.chat.Component.literal("§a[Lobby] Lobby created for §e" + (arena != null ? arena.getDisplayName() : "Arena") + "§a!"), false);
+        host.sendSystemMessage(Component.literal("§a[Lobby] Lobby created for §e" + (arena != null ? arena.getDisplayName() : "Arena") + "§a!"), false);
 
         // Pull Party Members Automatically
-        Party party = PartyManager.getParty(host.getUUID());
         if (party != null && party.getLeader().equals(host.getUUID()) && server != null) {
             for (UUID mUuid : party.getMembers()) {
                 if (!mUuid.equals(host.getUUID())) {
@@ -34,7 +40,7 @@ public class LobbyManager {
                         leaveCurrentLobby(mp, server);
                         lobby.joinTeam(mUuid, 1);
                         playerToLobby.put(mUuid, lobby.getLobbyId());
-                        mp.sendSystemMessage(net.minecraft.network.chat.Component.literal("§a[Lobby] Joined leader's lobby!"), false);
+                        mp.sendSystemMessage(Component.literal("§a[Lobby] Joined leader's lobby!"), false);
                     }
                 }
             }
@@ -44,6 +50,12 @@ public class LobbyManager {
     }
 
     public static void joinLobby(ServerPlayer player, UUID lobbyId, int teamIndex, MinecraftServer server) {
+        Party party = PartyManager.getParty(player.getUUID());
+        if (party != null && !party.getLeader().equals(player.getUUID())) {
+            player.sendSystemMessage(Component.literal("§c[Party] Only the party leader can join a lobby!"), false);
+            return;
+        }
+
         ArenaLobby lobby = lobbies.get(lobbyId);
         if (lobby != null) {
             leaveCurrentLobby(player, server);
@@ -51,8 +63,7 @@ public class LobbyManager {
                 playerToLobby.put(player.getUUID(), lobbyId);
                 lobby.broadcast(server, "§e[Lobby] " + player.getScoreboardName() + " joined Team " + teamIndex + "!");
 
-                // Pull party members
-                Party party = PartyManager.getParty(player.getUUID());
+                // Pull party members with leader
                 if (party != null && party.getLeader().equals(player.getUUID())) {
                     for (UUID mUuid : party.getMembers()) {
                         if (!mUuid.equals(player.getUUID())) {

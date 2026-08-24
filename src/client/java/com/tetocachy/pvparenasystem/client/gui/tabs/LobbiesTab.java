@@ -71,7 +71,9 @@ public class LobbiesTab implements ArenaScreenTab {
             }
 
         } else {
-            // LOBBY BROWSER & HOST CREATOR
+            // LOBBY BROWSER & CREATION
+            boolean isPartyMemberNotLeader = data.party().inParty() && !data.party().isLeader();
+
             List<S2CSyncArenaDataPayload.ArenaInfo> arenas = data.arenas();
             String curArena = arenas.isEmpty() ? "Any Arena" : arenas.get(Math.min(selectedArenaIndex, arenas.size() - 1)).displayName();
 
@@ -111,18 +113,30 @@ public class LobbiesTab implements ArenaScreenTab {
                 b.setMessage(Component.literal("Rounds: §eBo" + (rounds * 2 - 1)));
             }).bounds(x + (thirdW * 2) + 12, y + 22, thirdW, 18).build());
 
-            addWidget.accept(Button.builder(Component.literal("§a§l+ CREATE & OPEN LOBBY"), b -> {
-                String aId = arenas.isEmpty() ? "" : arenas.get(Math.min(selectedArenaIndex, arenas.size() - 1)).id();
-                String kId = kits.isEmpty() ? "" : kits.get(Math.min(selectedKitIndex, kits.size() - 1)).id();
-                ClientPlayNetworking.send(new C2SActionPayload("LOBBY_CREATE", aId, kId, teamCount, playersPerTeam, rounds));
-            }).bounds(x + 4, y + 43, width - 8, 20).build());
+            if (isPartyMemberNotLeader) {
+                Button lockedCreate = Button.builder(Component.literal("§c🔒 Only Party Leader Can Host"), b -> {}).bounds(x + 4, y + 43, width - 8, 20).build();
+                lockedCreate.active = false;
+                addWidget.accept(lockedCreate);
+            } else {
+                addWidget.accept(Button.builder(Component.literal("§a§l+ CREATE & OPEN LOBBY"), b -> {
+                    String aId = arenas.isEmpty() ? "" : arenas.get(Math.min(selectedArenaIndex, arenas.size() - 1)).id();
+                    String kId = kits.isEmpty() ? "" : kits.get(Math.min(selectedKitIndex, kits.size() - 1)).id();
+                    ClientPlayNetworking.send(new C2SActionPayload("LOBBY_CREATE", aId, kId, teamCount, playersPerTeam, rounds));
+                }).bounds(x + 4, y + 43, width - 8, 20).build());
+            }
 
             // List of Public Lobbies
             int lY = y + 78;
             for (S2CSyncArenaDataPayload.LobbyInfo l : data.lobbies()) {
-                addWidget.accept(Button.builder(Component.literal("§e" + l.hostName() + "'s Lobby §7[" + l.arenaName() + " | " + l.kitName() + "] §a[JOIN]"), b -> {
-                    ClientPlayNetworking.send(new C2SActionPayload("LOBBY_JOIN", l.lobbyId(), "", 1, 0));
-                }).bounds(x + 4, lY, width - 8, 18).build());
+                if (isPartyMemberNotLeader) {
+                    Button lockedJoin = Button.builder(Component.literal("§7" + l.hostName() + "'s Lobby §c[Locked: In Party]"), b -> {}).bounds(x + 4, lY, width - 8, 18).build();
+                    lockedJoin.active = false;
+                    addWidget.accept(lockedJoin);
+                } else {
+                    addWidget.accept(Button.builder(Component.literal("§e" + l.hostName() + "'s Lobby §7[" + l.arenaName() + " | " + l.kitName() + "] §a[JOIN]"), b -> {
+                        ClientPlayNetworking.send(new C2SActionPayload("LOBBY_JOIN", l.lobbyId(), "", 1, 0));
+                    }).bounds(x + 4, lY, width - 8, 18).build());
+                }
                 lY += 20;
             }
         }
@@ -139,14 +153,12 @@ public class LobbiesTab implements ArenaScreenTab {
             int gap = 4;
             int cardW = (contentW - 8 - ((teamsNum - 1) * gap)) / teamsNum;
 
-            // Lobby Status Header Bar
             graphics.fill(contentX + 4, contentY + 2, contentX + contentW - 4, contentY + 20, 0xF0161820);
             graphics.outline(contentX + 4, contentY + 2, contentW - 8, 18, 0xFF4A4E5C);
 
             String header = "§6Host: §f" + l.hostName() + "  §7|  §eMap: §f" + l.arenaName() + "  §7|  §bKit: §f" + l.kitName() + "  §7|  §aBest of " + (l.rounds() * 2 - 1);
             graphics.text(Minecraft.getInstance().font, Component.literal(header), contentX + 8, contentY + 7, 0xFFFFFFFF, false);
 
-            // Render Team Cards
             int cardTop = contentY + 24;
             int cardH = contentH - 76;
 
@@ -154,16 +166,13 @@ public class LobbiesTab implements ArenaScreenTab {
                 S2CSyncArenaDataPayload.TeamSlotInfo t = l.teams().get(i);
                 int cardX = contentX + 4 + (i * (cardW + gap));
 
-                // Card Background & Frame
                 graphics.fill(cardX, cardTop, cardX + cardW, cardTop + cardH, 0xF0181A22);
                 graphics.outline(cardX, cardTop, cardW, cardH, 0xFF4A5060);
 
-                // Team Header
                 graphics.fill(cardX + 1, cardTop + 1, cardX + cardW - 1, cardTop + 16, 0xF0252A38);
                 String tTitle = "§eTeam " + t.teamIndex() + " §7(" + t.memberNames().size() + "/" + l.playersPerTeam() + ")";
                 graphics.text(Minecraft.getInstance().font, Component.literal(tTitle), cardX + 4, cardTop + 4, 0xFFFFFFFF, false);
 
-                // Players in Team
                 int py = cardTop + 20;
                 for (int slot = 0; slot < l.playersPerTeam(); slot++) {
                     if (slot < t.memberNames().size()) {
@@ -177,7 +186,6 @@ public class LobbiesTab implements ArenaScreenTab {
                 }
             }
         } else {
-            // Lobbies Browser Header
             graphics.text(Minecraft.getInstance().font, Component.literal("§6Active Public Lobbies:"), contentX + 6, contentY + 66, 0xFFFFFFFF, false);
             if (data.lobbies().isEmpty()) {
                 graphics.text(Minecraft.getInstance().font, Component.literal("§7No active lobbies found. Create one above!"), contentX + 10, contentY + 80, 0xFFAAAAAA, false);
