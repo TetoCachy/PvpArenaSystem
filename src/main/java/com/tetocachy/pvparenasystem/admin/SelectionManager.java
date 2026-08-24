@@ -26,9 +26,13 @@ public class SelectionManager {
     }
 
     public static void clearSelection(ServerPlayer player) {
-        pos1Map.remove(player.getUUID());
-        pos2Map.remove(player.getUUID());
+        clearSelectionSilently(player.getUUID());
         player.sendSystemMessage(Component.literal("§e[PvpArena] Selection cleared!"), false);
+    }
+
+    public static void clearSelectionSilently(UUID uuid) {
+        pos1Map.remove(uuid);
+        pos2Map.remove(uuid);
     }
 
     private static void checkSelection(ServerPlayer player) {

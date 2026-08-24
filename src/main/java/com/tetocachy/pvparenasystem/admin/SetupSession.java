@@ -25,6 +25,9 @@ public class SetupSession {
             finishSetup(player);
         }
 
+        // Clear any active wand selection so no ghost selection box renders in the void
+        SelectionManager.clearSelectionSilently(uuid);
+
         PlayerStateManager.saveSnapshot(player, "ARENA_SETUP");
         activeSessions.put(uuid, arena);
 
@@ -42,6 +45,7 @@ public class SetupSession {
         player.sendSystemMessage(Component.literal("§f- Stand where Team 2 spawns and run: §6/arena setspawn 2"), false);
         player.sendSystemMessage(Component.literal("§f- (Optional: /arena setspawn 3, 4 ... for multi-teams)"), false);
         player.sendSystemMessage(Component.literal("§f- Stand where spectators watch and run: §6/arena setspectator"), false);
+        player.sendSystemMessage(Component.literal("§f- Stand where pre-match lobby is and run: §6/arena setlobby"), false);
         player.sendSystemMessage(Component.literal("§f- To commit changes: §a/arena save"), false);
         player.sendSystemMessage(Component.literal("§f- To leave setup: §c/arena leave"), false);
         player.sendSystemMessage(Component.literal("§a========================================"), false);
