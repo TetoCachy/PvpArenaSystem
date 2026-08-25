@@ -34,6 +34,13 @@ loom {
 			runDir "run/player"
 			programArgs "--username", "Player"
 		}
+
+		clientPlayer2 {
+			client()
+			name "Minecraft Client - Player2"
+			runDir "run/player"
+			programArgs "--username", "Player2"
+		}
 	}
 }
 

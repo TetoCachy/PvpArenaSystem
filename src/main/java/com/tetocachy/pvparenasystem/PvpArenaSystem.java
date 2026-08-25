@@ -1,13 +1,12 @@
 package com.tetocachy.pvparenasystem;
 
 import com.tetocachy.pvparenasystem.arena.ArenaManager;
-import com.tetocachy.pvparenasystem.command.ArenaCommand;
-import com.tetocachy.pvparenasystem.command.DuelCommand;
-import com.tetocachy.pvparenasystem.command.KitCommand;
-import com.tetocachy.pvparenasystem.command.PartyCommand;
+import com.tetocachy.pvparenasystem.command.*;
+import com.tetocachy.pvparenasystem.config.ArenaModConfig;
 import com.tetocachy.pvparenasystem.event.PlayerEventListener;
 import com.tetocachy.pvparenasystem.kit.KitManager;
 import com.tetocachy.pvparenasystem.match.MatchManager;
+import com.tetocachy.pvparenasystem.network.ModPackets;
 import com.tetocachy.pvparenasystem.player.PlayerStateManager;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -25,32 +24,32 @@ public class PvpArenaSystem implements ModInitializer {
 	public void onInitialize() {
 		LOGGER.info("Initializing PvpArenaSystem...");
 
-		// 1. Register Event Listeners
 		PlayerEventListener.register();
 
-		// 2. Register Server Tick (Match Engine Loop)
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
 			MatchManager.tickMatches();
 		});
 
-		// 3. Register Commands
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 			ArenaCommand.register(dispatcher);
 			KitCommand.register(dispatcher);
-			DuelCommand.register(dispatcher);
 			PartyCommand.register(dispatcher);
+			MenuCommand.register(dispatcher);
 		});
 
-		// 4. Server Lifecycle Hooks
 		ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+			ArenaModConfig.loadConfig(server);
 			KitManager.loadKits(server);
 			ArenaManager.loadArenas(server);
-			LOGGER.info("PvpArenaSystem successfully loaded kits and arenas!");
+			LOGGER.info("PvpArenaSystem successfully loaded configuration, kits, and arenas!");
 		});
 
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
 			PlayerStateManager.emergencyRestoreAll(server);
 		});
+
+		ModPackets.registerCommon();
+		ModPackets.registerServerReceivers();
 	}
 
 	public static Identifier id(String path) {

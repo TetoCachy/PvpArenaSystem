@@ -1,11 +1,15 @@
 package com.tetocachy.pvparenasystem.kit;
 
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class Kit {
     private final String id;
@@ -53,6 +57,19 @@ public class Kit {
         player.inventoryMenu.broadcastChanges();
     }
 
+    public List<ItemStack> getItems(HolderLookup.Provider registries) {
+        List<ItemStack> items = new ArrayList<>();
+        for (int i = 0; i < inventoryTag.size(); i++) {
+            CompoundTag slotTag = inventoryTag.getCompoundOrEmpty(i);
+            Tag itemTag = slotTag.get("Item");
+            if (itemTag != null) {
+                ItemStack stack = ItemStack.CODEC.parse(registries.createSerializationContext(NbtOps.INSTANCE), itemTag).result().orElse(ItemStack.EMPTY);
+                if (!stack.isEmpty()) items.add(stack);
+            }
+        }
+        return items;
+    }
+
     public CompoundTag toNbt() {
         CompoundTag tag = new CompoundTag();
         tag.putString("Id", id);
@@ -71,4 +88,5 @@ public class Kit {
 
     public String getId() { return id; }
     public String getDisplayName() { return displayName; }
+    public ListTag getInventoryTag() { return inventoryTag; }
 }

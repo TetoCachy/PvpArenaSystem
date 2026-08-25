@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.*;
 
@@ -13,11 +14,13 @@ public class Arena {
     private String displayName;
     private BlockPos minPos;
     private BlockPos maxPos;
+    private int maxTeams = 2;
+    private int maxPlayersPerTeam = 1;
     private final Map<Integer, List<SpawnPoint>> teamSpawns = new HashMap<>();
     private SpawnPoint spectatorSpawn;
-    private SpawnPoint lobbySpawn;
     private boolean inUse = false;
     private ArenaBlockSnapshot blockSnapshot;
+    private ArenaBoundary boundary;
 
     public Arena(String id, String displayName, BlockPos minPos, BlockPos maxPos) {
         this.id = id;
@@ -25,24 +28,59 @@ public class Arena {
         this.minPos = minPos;
         this.maxPos = maxPos;
         this.blockSnapshot = new ArenaBlockSnapshot(minPos, maxPos);
+        this.boundary = new ArenaBoundary(minPos, maxPos);
     }
 
     public boolean isConfigured() {
-        return teamSpawns.containsKey(1) && teamSpawns.containsKey(2) && spectatorSpawn != null;
+        return getMaxSupportedTeams() >= 2 && spectatorSpawn != null;
+    }
+
+    public boolean supportsTeamCount(int count) {
+        if (count < 2) return false;
+        return count <= getMaxSupportedTeams();
+    }
+
+    public int getMaxSupportedTeams() {
+        int count = 0;
+        while (true) {
+            List<SpawnPoint> spawns = teamSpawns.get(count + 1);
+            if (spawns == null || spawns.isEmpty()) {
+                break;
+            }
+            count++;
+        }
+        return count;
+    }
+
+    public boolean isInsideBoundary(double x, double y, double z) {
+        return boundary == null || boundary.isInside(x, y, z);
+    }
+
+    public boolean isBelowVoid(double y) {
+        return boundary != null && boundary.isBelowVoid(y);
+    }
+
+    public Vec3 getCenterVec() {
+        return new Vec3(
+                (minPos.getX() + maxPos.getX() + 1) / 2.0,
+                minPos.getY() + 1.0,
+                (minPos.getZ() + maxPos.getZ() + 1) / 2.0
+        );
     }
 
     public void addTeamSpawn(int teamIndex, SpawnPoint spawn) {
         teamSpawns.computeIfAbsent(teamIndex, k -> new ArrayList<>()).add(spawn);
+        if (teamIndex > maxTeams) {
+            maxTeams = teamIndex;
+        }
+    }
+
+    public void clearTeamSpawns(int teamIndex) {
+        teamSpawns.remove(teamIndex);
     }
 
     public List<SpawnPoint> getTeamSpawns(int teamIndex) {
         return teamSpawns.getOrDefault(teamIndex, Collections.emptyList());
-    }
-
-    public boolean contains(BlockPos pos) {
-        return pos.getX() >= minPos.getX() && pos.getX() <= maxPos.getX()
-                && pos.getY() >= minPos.getY() && pos.getY() <= maxPos.getY()
-                && pos.getZ() >= minPos.getZ() && pos.getZ() <= maxPos.getZ();
     }
 
     public void captureMapSnapshot(ServerLevel level) {
@@ -62,6 +100,8 @@ public class Arena {
         JsonObject obj = new JsonObject();
         obj.addProperty("id", id);
         obj.addProperty("displayName", displayName);
+        obj.addProperty("maxTeams", getMaxSupportedTeams());
+        obj.addProperty("maxPlayersPerTeam", maxPlayersPerTeam);
 
         JsonObject min = new JsonObject();
         min.addProperty("x", minPos.getX());
@@ -86,7 +126,7 @@ public class Arena {
         obj.add("teamSpawns", spawnsObj);
 
         if (spectatorSpawn != null) obj.add("spectatorSpawn", spectatorSpawn.toJson());
-        if (lobbySpawn != null) obj.add("lobbySpawn", lobbySpawn.toJson());
+        if (boundary != null) obj.add("boundary", boundary.toJson());
 
         return obj;
     }
@@ -102,6 +142,8 @@ public class Arena {
         BlockPos maxPos = new BlockPos(max.get("x").getAsInt(), max.get("y").getAsInt(), max.get("z").getAsInt());
 
         Arena arena = new Arena(id, name, minPos, maxPos);
+        if (obj.has("maxTeams")) arena.setMaxTeams(obj.get("maxTeams").getAsInt());
+        if (obj.has("maxPlayersPerTeam")) arena.setMaxPlayersPerTeam(obj.get("maxPlayersPerTeam").getAsInt());
 
         if (obj.has("teamSpawns")) {
             JsonObject spawnsObj = obj.getAsJsonObject("teamSpawns");
@@ -117,23 +159,27 @@ public class Arena {
         if (obj.has("spectatorSpawn")) {
             arena.setSpectatorSpawn(SpawnPoint.fromJson(obj.getAsJsonObject("spectatorSpawn")));
         }
-        if (obj.has("lobbySpawn")) {
-            arena.setLobbySpawn(SpawnPoint.fromJson(obj.getAsJsonObject("lobbySpawn")));
+        if (obj.has("boundary")) {
+            arena.setBoundary(ArenaBoundary.fromJson(obj.getAsJsonObject("boundary"), minPos, maxPos));
         }
 
         return arena;
     }
 
-    // Getters & Setters
     public String getId() { return id; }
     public String getDisplayName() { return displayName; }
+    public void setDisplayName(String name) { this.displayName = name; }
     public BlockPos getMinPos() { return minPos; }
     public BlockPos getMaxPos() { return maxPos; }
+    public int getMaxTeams() { return maxTeams; }
+    public void setMaxTeams(int maxTeams) { this.maxTeams = Math.max(2, maxTeams); }
+    public int getMaxPlayersPerTeam() { return maxPlayersPerTeam; }
+    public void setMaxPlayersPerTeam(int maxPlayersPerTeam) { this.maxPlayersPerTeam = Math.max(1, maxPlayersPerTeam); }
     public void setSpectatorSpawn(SpawnPoint sp) { this.spectatorSpawn = sp; }
     public SpawnPoint getSpectatorSpawn() { return spectatorSpawn; }
-    public void setLobbySpawn(SpawnPoint sp) { this.lobbySpawn = sp; }
-    public SpawnPoint getLobbySpawn() { return lobbySpawn; }
     public boolean isInUse() { return inUse; }
     public void setInUse(boolean inUse) { this.inUse = inUse; }
     public Map<Integer, List<SpawnPoint>> getAllTeamSpawns() { return teamSpawns; }
+    public ArenaBoundary getBoundary() { return boundary; }
+    public void setBoundary(ArenaBoundary boundary) { this.boundary = boundary; }
 }

@@ -25,6 +25,9 @@ public class SetupSession {
             finishSetup(player);
         }
 
+        // Clear active wand selection so no ghost box renders in the void
+        SelectionManager.clearSelectionSilently(uuid);
+
         PlayerStateManager.saveSnapshot(player, "ARENA_SETUP");
         activeSessions.put(uuid, arena);
 
