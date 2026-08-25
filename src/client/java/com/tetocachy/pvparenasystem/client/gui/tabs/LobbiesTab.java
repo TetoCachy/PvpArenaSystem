@@ -23,9 +23,11 @@ public class LobbiesTab implements ArenaScreenTab {
     private int contentX, contentY, contentW, contentH;
     private int selectedArenaIndex = 0;
     private int selectedKitIndex = 0;
-    private int teamCount = 2;
-    private int playersPerTeam = 2;
-    private int rounds = 3;
+
+    private int teamCountIndex = 0;
+    private int teamSizeIndex = 0;
+    private int goalPointsIndex = 1;
+    private boolean friendlyFire = false;
 
     private int teamScrollIndex = 0;
 
@@ -48,8 +50,19 @@ public class LobbiesTab implements ArenaScreenTab {
         if (!ClientArenaCache.hasData()) return;
         S2CSyncArenaDataPayload data = ClientArenaCache.currentData;
 
+        List<Integer> teamCounts = data.allowedTeamCounts().isEmpty() ? List.of(2, 3, 4) : data.allowedTeamCounts();
+        List<Integer> teamSizes = data.allowedTeamSizes().isEmpty() ? List.of(1, 2, 4) : data.allowedTeamSizes();
+        List<Integer> goalPoints = data.allowedGoalPoints().isEmpty() ? List.of(1, 2, 3, 5) : data.allowedGoalPoints();
+
+        teamCountIndex = Math.min(teamCountIndex, teamCounts.size() - 1);
+        teamSizeIndex = Math.min(teamSizeIndex, teamSizes.size() - 1);
+        goalPointsIndex = Math.min(goalPointsIndex, goalPoints.size() - 1);
+
+        int currentTeamCount = teamCounts.get(teamCountIndex);
+        int currentTeamSize = teamSizes.get(teamSizeIndex);
+        int currentGoalPoints = goalPoints.get(goalPointsIndex);
+
         if (data.currentLobby() != null) {
-            // MMORPG LOBBY ROOM VIEW
             S2CSyncArenaDataPayload.LobbyInfo l = data.currentLobby();
             int totalTeams = Math.max(1, l.teams().size());
             int gap = 6;
@@ -61,7 +74,6 @@ public class LobbiesTab implements ArenaScreenTab {
             int maxScrollIndex = Math.max(0, totalTeams - visibleTeamsCount);
             teamScrollIndex = Math.max(0, Math.min(maxScrollIndex, teamScrollIndex));
 
-            // Paging Buttons in Header if teams exceed visible count
             if (maxScrollIndex > 0) {
                 addWidget.accept(Button.builder(Component.literal("◀"), b -> {
                     if (teamScrollIndex > 0) {
@@ -111,13 +123,11 @@ public class LobbiesTab implements ArenaScreenTab {
             }
 
         } else {
-            // LOBBY BROWSER & CREATION
             boolean isPartyMemberNotLeader = data.party().inParty() && !data.party().isLeader();
 
-            // Filter arenas by team size support (Point 5)
             List<S2CSyncArenaDataPayload.ArenaInfo> compatibleArenas = new ArrayList<>();
             for (S2CSyncArenaDataPayload.ArenaInfo a : data.arenas()) {
-                if (a.maxTeams() >= teamCount || a.teamSpawnCount() >= teamCount) {
+                if (a.maxTeams() >= currentTeamCount || a.teamSpawnCount() >= currentTeamCount) {
                     compatibleArenas.add(a);
                 }
             }
@@ -126,19 +136,12 @@ public class LobbiesTab implements ArenaScreenTab {
                 selectedArenaIndex = 0;
             }
 
-            String curArena;
-            if (compatibleArenas.isEmpty()) {
-                curArena = "§cNo Map for " + teamCount + "T";
-            } else {
-                curArena = "§e" + compatibleArenas.get(selectedArenaIndex).displayName();
-            }
-
+            String curArena = compatibleArenas.isEmpty() ? ("§cNo Map for " + currentTeamCount + "T") : ("§e" + compatibleArenas.get(selectedArenaIndex).displayName());
             List<S2CSyncArenaDataPayload.KitInfo> kits = data.kits();
             String curKit = kits.isEmpty() ? "Default Kit" : kits.get(Math.min(selectedKitIndex, Math.max(0, kits.size() - 1))).displayName();
 
             int colW = (width - 12) / 2;
 
-            // Arena Selector Button
             Button arenaBtn = Button.builder(Component.literal("Map: " + curArena), b -> {
                 if (!compatibleArenas.isEmpty()) {
                     selectedArenaIndex = (selectedArenaIndex + 1) % compatibleArenas.size();
@@ -148,7 +151,6 @@ public class LobbiesTab implements ArenaScreenTab {
             arenaBtn.active = !compatibleArenas.isEmpty();
             addWidget.accept(arenaBtn);
 
-            // Kit Selector Button
             addWidget.accept(Button.builder(Component.literal("Kit: §b" + curKit), b -> {
                 if (!kits.isEmpty()) {
                     selectedKitIndex = (selectedKitIndex + 1) % kits.size();
@@ -156,42 +158,51 @@ public class LobbiesTab implements ArenaScreenTab {
                 }
             }).bounds(x + colW + 8, y + 2, colW, 18).build());
 
-            int thirdW = (width - 16) / 3;
+            int fourthW = (width - 20) / 4;
 
-            // Teams Count Button (Cycles 2 -> 8, auto-refreshes valid map pool)
-            addWidget.accept(Button.builder(Component.literal("Teams: §a" + teamCount), b -> {
-                teamCount = teamCount >= 8 ? 2 : teamCount + 1;
+            // Teams Selector (Modular Preset Cycle)
+            addWidget.accept(Button.builder(Component.literal("Teams: §a" + currentTeamCount), b -> {
+                teamCountIndex = (teamCountIndex + 1) % teamCounts.size();
                 selectedArenaIndex = 0;
                 parentScreen.rebuildTabContent();
-            }).bounds(x + 4, y + 22, thirdW, 18).build());
+            }).bounds(x + 4, y + 22, fourthW, 18).build());
 
-            addWidget.accept(Button.builder(Component.literal("Per Team: §a" + playersPerTeam), b -> {
-                playersPerTeam = playersPerTeam >= 10 ? 1 : (playersPerTeam == 1 ? 2 : (playersPerTeam == 2 ? 4 : (playersPerTeam == 4 ? 5 : 10)));
-                b.setMessage(Component.literal("Per Team: §a" + playersPerTeam));
-            }).bounds(x + thirdW + 8, y + 22, thirdW, 18).build());
+            // Team Size Selector (Modular Preset Cycle)
+            addWidget.accept(Button.builder(Component.literal("Size: §a" + currentTeamSize + "v" + currentTeamSize), b -> {
+                teamSizeIndex = (teamSizeIndex + 1) % teamSizes.size();
+                int nextSize = teamSizes.get(teamSizeIndex);
+                b.setMessage(Component.literal("Size: §a" + nextSize + "v" + nextSize));
+            }).bounds(x + fourthW + 8, y + 22, fourthW, 18).build());
 
-            addWidget.accept(Button.builder(Component.literal("Rounds: §eBo" + (rounds * 2 - 1)), b -> {
-                rounds = rounds >= 4 ? 1 : rounds + 1;
-                b.setMessage(Component.literal("Rounds: §eBo" + (rounds * 2 - 1)));
-            }).bounds(x + (thirdW * 2) + 12, y + 22, thirdW, 18).build());
+            // Goal Points Selector (Modular Preset Cycle with Pt / Pts grammar)
+            String pointLabel = currentGoalPoints == 1 ? "1 Pt" : currentGoalPoints + " Pts";
+            addWidget.accept(Button.builder(Component.literal("Goal: §e" + pointLabel), b -> {
+                goalPointsIndex = (goalPointsIndex + 1) % goalPoints.size();
+                int nextPts = goalPoints.get(goalPointsIndex);
+                b.setMessage(Component.literal("Goal: §e" + (nextPts == 1 ? "1 Pt" : nextPts + " Pts")));
+            }).bounds(x + (fourthW * 2) + 12, y + 22, fourthW, 18).build());
+
+            addWidget.accept(Button.builder(Component.literal("FF: " + (friendlyFire ? "§aON" : "§cOFF")), b -> {
+                friendlyFire = !friendlyFire;
+                b.setMessage(Component.literal("FF: " + (friendlyFire ? "§aON" : "§cOFF")));
+            }).bounds(x + (fourthW * 3) + 16, y + 22, fourthW, 18).build());
 
             if (isPartyMemberNotLeader) {
                 Button lockedCreate = Button.builder(Component.literal("§c🔒 Only Party Leader Can Host"), b -> {}).bounds(x + 4, y + 43, width - 8, 20).build();
                 lockedCreate.active = false;
                 addWidget.accept(lockedCreate);
             } else if (compatibleArenas.isEmpty()) {
-                Button noArenaCreate = Button.builder(Component.literal("§c✕ No Arena Supports " + teamCount + " Teams"), b -> {}).bounds(x + 4, y + 43, width - 8, 20).build();
+                Button noArenaCreate = Button.builder(Component.literal("§c✕ No Arena Supports " + currentTeamCount + " Teams"), b -> {}).bounds(x + 4, y + 43, width - 8, 20).build();
                 noArenaCreate.active = false;
                 addWidget.accept(noArenaCreate);
             } else {
                 addWidget.accept(Button.builder(Component.literal("§a§l+ CREATE & OPEN LOBBY"), b -> {
                     String aId = compatibleArenas.get(selectedArenaIndex).id();
                     String kId = kits.isEmpty() ? "" : kits.get(Math.min(selectedKitIndex, kits.size() - 1)).id();
-                    ClientPlayNetworking.send(new C2SActionPayload("LOBBY_CREATE", aId, kId, teamCount, playersPerTeam, rounds));
+                    ClientPlayNetworking.send(new C2SActionPayload("LOBBY_CREATE", aId, kId, currentTeamCount, currentTeamSize, currentGoalPoints, friendlyFire ? 1 : 0));
                 }).bounds(x + 4, y + 43, width - 8, 20).build());
             }
 
-            // List of Public Lobbies
             int listY = y + 78;
             for (S2CSyncArenaDataPayload.LobbyInfo l : data.lobbies()) {
                 int totalInLobby = 0;
@@ -205,12 +216,13 @@ public class LobbiesTab implements ArenaScreenTab {
                 int specBtnW = 55;
                 int labelW = width - 8 - joinBtnW - specBtnW - 4;
 
+                String pUnit = l.pointsToWin() == 1 ? "Pt" : "Pts";
                 if (isPartyMemberNotLeader) {
                     Button lockedJoin = Button.builder(Component.literal("§7" + l.hostName() + "'s Lobby §c[Locked: In Party]"), b -> {}).bounds(x + 4, listY, width - 8, 18).build();
                     lockedJoin.active = false;
                     addWidget.accept(lockedJoin);
                 } else {
-                    String label = "§e" + l.hostName() + " §7[" + l.arenaName() + "] §b(" + totalInLobby + "/" + maxCapacity + ")";
+                    String label = "§e" + l.hostName() + " §7[" + l.arenaName() + "] §6(" + l.pointsToWin() + " " + pUnit + ") §b(" + totalInLobby + "/" + maxCapacity + ")";
                     Button infoBtn = Button.builder(Component.literal(label), b -> {}).bounds(x + 4, listY, labelW, 18).build();
                     infoBtn.active = false;
                     addWidget.accept(infoBtn);
@@ -232,11 +244,11 @@ public class LobbiesTab implements ArenaScreenTab {
                 listY += 20;
             }
 
-            // Ongoing Live Matches Section
             if (!data.activeMatches().isEmpty()) {
                 listY += 4;
                 for (S2CSyncArenaDataPayload.OngoingMatchInfo match : data.activeMatches()) {
-                    String mLabel = "§6⚔ " + match.arenaName() + " §7(Round " + match.currentRound() + "/" + match.totalRounds() + ") §b[" + match.playerCount() + " Fighters]";
+                    String pUnit = match.pointsToWin() == 1 ? "Pt" : "Pts";
+                    String mLabel = "§6⚔ " + match.arenaName() + " §7(Round " + match.currentRound() + " - First to " + match.pointsToWin() + " " + pUnit + ") §b[" + match.playerCount() + " Fighters]";
                     int mBtnW = 75;
                     int mTextW = width - 8 - mBtnW - 2;
 
@@ -293,7 +305,9 @@ public class LobbiesTab implements ArenaScreenTab {
             graphics.fill(contentX + 4, contentY + 2, contentX + contentW - 4, contentY + 20, 0xF0161820);
             graphics.outline(contentX + 4, contentY + 2, contentW - 8, 18, 0xFF4A4E5C);
 
-            String header = "§6Host: §f" + l.hostName() + "  §7|  §eMap: §f" + l.arenaName() + "  §7|  §bKit: §f" + l.kitName() + "  §7|  §aBo" + (l.rounds() * 2 - 1);
+            String ffText = l.friendlyFire() ? "§aON" : "§cOFF";
+            String pUnit = l.pointsToWin() == 1 ? "Pt" : "Pts";
+            String header = "§6Host: §f" + l.hostName() + "  §7|  §eMap: §f" + l.arenaName() + "  §7|  §bKit: §f" + l.kitName() + "  §7|  §aFirst to " + l.pointsToWin() + " " + pUnit + "  §7|  §cFF: " + ffText;
             if (totalTeams > 3) {
                 header += "  §e(" + (teamScrollIndex + 1) + "-" + (teamScrollIndex + visibleTeamsCount) + " of " + totalTeams + ")";
             }

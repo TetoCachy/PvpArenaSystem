@@ -18,7 +18,6 @@ public class Arena {
     private int maxPlayersPerTeam = 1;
     private final Map<Integer, List<SpawnPoint>> teamSpawns = new HashMap<>();
     private SpawnPoint spectatorSpawn;
-    private SpawnPoint lobbySpawn;
     private boolean inUse = false;
     private ArenaBlockSnapshot blockSnapshot;
     private ArenaBoundary boundary;
@@ -36,17 +35,11 @@ public class Arena {
         return getMaxSupportedTeams() >= 2 && spectatorSpawn != null;
     }
 
-    /**
-     * Returns true if every team from 1 to count has at least one spawn point configured.
-     */
     public boolean supportsTeamCount(int count) {
         if (count < 2) return false;
         return count <= getMaxSupportedTeams();
     }
 
-    /**
-     * Calculates the maximum consecutive teams configured with spawn points.
-     */
     public int getMaxSupportedTeams() {
         int count = 0;
         while (true) {
@@ -133,7 +126,6 @@ public class Arena {
         obj.add("teamSpawns", spawnsObj);
 
         if (spectatorSpawn != null) obj.add("spectatorSpawn", spectatorSpawn.toJson());
-        if (lobbySpawn != null) obj.add("lobbySpawn", lobbySpawn.toJson());
         if (boundary != null) obj.add("boundary", boundary.toJson());
 
         return obj;
@@ -167,9 +159,6 @@ public class Arena {
         if (obj.has("spectatorSpawn")) {
             arena.setSpectatorSpawn(SpawnPoint.fromJson(obj.getAsJsonObject("spectatorSpawn")));
         }
-        if (obj.has("lobbySpawn")) {
-            arena.setLobbySpawn(SpawnPoint.fromJson(obj.getAsJsonObject("lobbySpawn")));
-        }
         if (obj.has("boundary")) {
             arena.setBoundary(ArenaBoundary.fromJson(obj.getAsJsonObject("boundary"), minPos, maxPos));
         }
@@ -188,8 +177,6 @@ public class Arena {
     public void setMaxPlayersPerTeam(int maxPlayersPerTeam) { this.maxPlayersPerTeam = Math.max(1, maxPlayersPerTeam); }
     public void setSpectatorSpawn(SpawnPoint sp) { this.spectatorSpawn = sp; }
     public SpawnPoint getSpectatorSpawn() { return spectatorSpawn; }
-    public void setLobbySpawn(SpawnPoint sp) { this.lobbySpawn = sp; }
-    public SpawnPoint getLobbySpawn() { return lobbySpawn; }
     public boolean isInUse() { return inUse; }
     public void setInUse(boolean inUse) { this.inUse = inUse; }
     public Map<Integer, List<SpawnPoint>> getAllTeamSpawns() { return teamSpawns; }

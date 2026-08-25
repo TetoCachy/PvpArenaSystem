@@ -31,7 +31,7 @@ public class ArenaMainMenuScreen extends Screen {
         tabs.add(new PartyTab());
         tabs.add(new KitsTab());
         tabs.add(new ArenasTab());
-        tabs.add(new AdminTab());
+        tabs.add(new AdminTab(this));
     }
 
     @Override
@@ -92,7 +92,6 @@ public class ArenaMainMenuScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        // 1. Draw Advancement Tabs
         int tabX = leftPos + 8;
         ArenaScreenTab hoveredTab = null;
         int hoveredTabX = 0;
@@ -127,12 +126,10 @@ public class ArenaMainMenuScreen extends Screen {
             tabX += TAB_WIDTH + 4;
         }
 
-        // 2. Main Dialog Box
         graphics.fill(leftPos, topPos, leftPos + WINDOW_WIDTH, topPos + WINDOW_HEIGHT, 0xF2121317);
         graphics.fill(leftPos + 2, topPos + 2, leftPos + WINDOW_WIDTH - 2, topPos + WINDOW_HEIGHT - 2, 0xF220222A);
         graphics.outline(leftPos, topPos, WINDOW_WIDTH, WINDOW_HEIGHT, 0xFF888899);
 
-        // Header Separator
         graphics.fill(leftPos + 4, topPos + 20, leftPos + WINDOW_WIDTH - 4, topPos + 21, 0xFF3F424D);
 
         if (activeTabIndex >= 0 && activeTabIndex < tabs.size()) {
@@ -140,14 +137,12 @@ public class ArenaMainMenuScreen extends Screen {
             graphics.text(this.font, activeTab.getTitle(), leftPos + 10, topPos + 6, 0xFFFFDF60, true);
         }
 
-        // 3. Render Tab Content
         if (activeTabIndex >= 0 && activeTabIndex < tabs.size()) {
             tabs.get(activeTabIndex).extractRenderState(graphics, mouseX, mouseY, partialTick);
         }
 
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
-        // 4. Tab Hover Tooltips
         if (hoveredTab != null) {
             String text = hoveredTab.getTitle().getString();
             int textWidth = this.font.width(text);

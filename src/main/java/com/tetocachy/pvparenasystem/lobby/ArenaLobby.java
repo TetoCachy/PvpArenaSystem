@@ -18,19 +18,21 @@ public class ArenaLobby {
     private Kit kit;
     private int teamCount;
     private int playersPerTeam;
-    private int rounds = 3;
+    private int pointsToWin = 3;
+    private boolean friendlyFire = false;
 
     private final Map<Integer, List<UUID>> teamSlots = new ConcurrentHashMap<>();
     private final Set<UUID> spectators = ConcurrentHashMap.newKeySet();
 
-    public ArenaLobby(UUID hostUuid, String hostName, Arena arena, Kit kit, int teamCount, int playersPerTeam, int rounds) {
+    public ArenaLobby(UUID hostUuid, String hostName, Arena arena, Kit kit, int teamCount, int playersPerTeam, int pointsToWin, boolean friendlyFire) {
         this.hostUuid = hostUuid;
         this.hostName = hostName;
         this.arena = arena;
         this.kit = kit;
         this.teamCount = Math.max(2, teamCount);
         this.playersPerTeam = Math.max(1, playersPerTeam);
-        this.rounds = Math.max(1, rounds);
+        this.pointsToWin = Math.max(1, pointsToWin);
+        this.friendlyFire = friendlyFire;
 
         for (int i = 1; i <= this.teamCount; i++) {
             teamSlots.put(i, new ArrayList<>());
@@ -40,7 +42,6 @@ public class ArenaLobby {
 
     public synchronized boolean joinTeam(UUID playerUuid, int targetTeam) {
         List<UUID> slot = teamSlots.get(targetTeam);
-        // Only remove player if the target team actually has an open slot!
         if (slot != null && slot.size() < playersPerTeam) {
             leave(playerUuid);
             slot.add(playerUuid);
@@ -108,8 +109,8 @@ public class ArenaLobby {
                 activeTeams.put(entry.getKey(), new ArrayList<>(entry.getValue()));
             }
         }
-        broadcast(server, "§6§l[Lobby] §aStarting match in §e" + arena.getDisplayName() + "§a!");
-        MatchManager.createMatch(server, arena, kit, rounds, activeTeams, new ArrayList<>(spectators));
+        broadcast(server, "§6§l[Lobby] §aStarting match in §e" + arena.getDisplayName() + " §7(First to " + pointsToWin + " Points)!");
+        MatchManager.createMatch(server, arena, kit, pointsToWin, friendlyFire, activeTeams, new ArrayList<>(spectators));
     }
 
     public void broadcast(MinecraftServer server, String message) {
@@ -133,7 +134,8 @@ public class ArenaLobby {
     public Kit getKit() { return kit; }
     public int getTeamCount() { return teamCount; }
     public int getPlayersPerTeam() { return playersPerTeam; }
-    public int getRounds() { return rounds; }
+    public int getPointsToWin() { return pointsToWin; }
+    public boolean isFriendlyFire() { return friendlyFire; }
     public Map<Integer, List<UUID>> getTeamSlots() { return teamSlots; }
     public Set<UUID> getSpectators() { return spectators; }
 }

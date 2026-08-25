@@ -15,7 +15,7 @@ public class LobbyManager {
     private static final Map<UUID, ArenaLobby> lobbies = new ConcurrentHashMap<>();
     private static final Map<UUID, UUID> playerToLobby = new ConcurrentHashMap<>();
 
-    public static ArenaLobby createLobby(ServerPlayer host, Arena arena, Kit kit, int teamCount, int playersPerTeam, int rounds) {
+    public static ArenaLobby createLobby(ServerPlayer host, Arena arena, Kit kit, int teamCount, int playersPerTeam, int pointsToWin, boolean friendlyFire) {
         Party party = PartyManager.getParty(host.getUUID());
         if (party != null && !party.getLeader().equals(host.getUUID())) {
             host.sendSystemMessage(Component.literal("§c[Party] Only the party leader can create a lobby!"), false);
@@ -24,7 +24,7 @@ public class LobbyManager {
 
         leaveCurrentLobby(host, host.level().getServer());
 
-        ArenaLobby lobby = new ArenaLobby(host.getUUID(), host.getScoreboardName(), arena, kit, teamCount, playersPerTeam, rounds);
+        ArenaLobby lobby = new ArenaLobby(host.getUUID(), host.getScoreboardName(), arena, kit, teamCount, playersPerTeam, pointsToWin, friendlyFire);
         lobbies.put(lobby.getLobbyId(), lobby);
         playerToLobby.put(host.getUUID(), lobby.getLobbyId());
 

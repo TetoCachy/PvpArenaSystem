@@ -16,6 +16,7 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
 
 public class PlayerEventListener {
 
@@ -86,7 +87,23 @@ public class PlayerEventListener {
             return true;
         });
 
-        // 4. Intercept Fatal Damage in matches
+        // 4. Intercept Friendly Fire in Matches
+        ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, damageSource, damageAmount) -> {
+            if (entity instanceof ServerPlayer victim) {
+                Entity attacker = damageSource.getEntity();
+                if (attacker instanceof ServerPlayer attackerPlayer) {
+                    ArenaMatch match = MatchManager.getPlayerMatch(victim.getUUID());
+                    if (match != null && match.hasPlayer(attackerPlayer.getUUID())) {
+                        if (!match.isFriendlyFire() && match.areOnSameTeam(victim.getUUID(), attackerPlayer.getUUID())) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        });
+
+        // 5. Intercept Fatal Damage in matches
         ServerLivingEntityEvents.ALLOW_DEATH.register((entity, damageSource, damageAmount) -> {
             if (entity instanceof ServerPlayer player) {
                 ArenaMatch match = MatchManager.getPlayerMatch(player.getUUID());
@@ -98,7 +115,7 @@ public class PlayerEventListener {
             return true;
         });
 
-        // 5. Connection Events
+        // 6. Connection Events
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             PlayerStateManager.onPlayerJoin(handler.getPlayer());
             ModPackets.sendSyncToPlayer(handler.getPlayer());

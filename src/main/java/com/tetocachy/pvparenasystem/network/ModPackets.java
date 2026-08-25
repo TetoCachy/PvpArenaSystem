@@ -5,6 +5,7 @@ import com.tetocachy.pvparenasystem.admin.SetupSession;
 import com.tetocachy.pvparenasystem.arena.Arena;
 import com.tetocachy.pvparenasystem.arena.ArenaManager;
 import com.tetocachy.pvparenasystem.arena.SpawnPoint;
+import com.tetocachy.pvparenasystem.config.ArenaModConfig;
 import com.tetocachy.pvparenasystem.dimension.ModDimensions;
 import com.tetocachy.pvparenasystem.kit.Kit;
 import com.tetocachy.pvparenasystem.kit.KitManager;
@@ -84,9 +85,6 @@ public class ModPackets {
             if (a.getSpectatorSpawn() != null) {
                 spawns.add(new S2CSyncArenaDataPayload.SpawnPointData(99, a.getSpectatorSpawn().getX(), a.getSpectatorSpawn().getY(), a.getSpectatorSpawn().getZ()));
             }
-            if (a.getLobbySpawn() != null) {
-                spawns.add(new S2CSyncArenaDataPayload.SpawnPointData(100, a.getLobbySpawn().getX(), a.getLobbySpawn().getY(), a.getLobbySpawn().getZ()));
-            }
 
             arenas.add(new S2CSyncArenaDataPayload.ArenaInfo(
                     a.getId(), a.getDisplayName(), status,
@@ -139,7 +137,8 @@ public class ModPackets {
                     m.getArena().getDisplayName(),
                     m.getKit() != null ? m.getKit().getDisplayName() : "Default Kit",
                     m.getCurrentRound(),
-                    m.getRoundsToWin() * 2 - 1,
+                    m.getPointsToWin(),
+                    m.isFriendlyFire(),
                     totalP,
                     m.getSpectators().size()
             ));
@@ -148,7 +147,8 @@ public class ModPackets {
         S2CSyncArenaDataPayload sync = new S2CSyncArenaDataPayload(
                 isAdmin, inSetup, editingArena != null ? editingArena.getId() : "",
                 SelectionManager.getPos1(player.getUUID()), SelectionManager.getPos2(player.getUUID()),
-                players, kits, arenas, lobbies, currentLobbyInfo, partyInfo, pubParties, activeMatches
+                players, kits, arenas, lobbies, currentLobbyInfo, partyInfo, pubParties, activeMatches,
+                ArenaModConfig.ALLOWED_TEAM_COUNTS, ArenaModConfig.ALLOWED_TEAM_SIZES, ArenaModConfig.ALLOWED_GOAL_POINTS
         );
 
         ServerPlayNetworking.send(player, sync);
@@ -176,7 +176,7 @@ public class ModPackets {
                 l.getLobbyId().toString(), l.getHostName(),
                 l.getArena() != null ? l.getArena().getDisplayName() : "Any Arena",
                 l.getKit() != null ? l.getKit().getDisplayName() : "Default Kit",
-                l.getTeamCount(), l.getPlayersPerTeam(), l.getRounds(), teams, specNames
+                l.getTeamCount(), l.getPlayersPerTeam(), l.getPointsToWin(), l.isFriendlyFire(), teams, specNames
         );
     }
 
@@ -187,10 +187,23 @@ public class ModPackets {
         switch (action) {
             case "REQUEST_SYNC" -> {}
 
+            case "ADMIN_ADD_PRESET" -> {
+                if (isAdmin) {
+                    ArenaModConfig.addPreset(server, payload.param1(), payload.intParam1());
+                }
+            }
+
+            case "ADMIN_REMOVE_PRESET" -> {
+                if (isAdmin) {
+                    ArenaModConfig.removePreset(server, payload.param1(), payload.intParam1());
+                }
+            }
+
             case "LOBBY_CREATE" -> {
                 int teams = Math.max(2, payload.intParam1());
                 int playersPerTeam = Math.max(1, payload.intParam2());
-                int rounds = Math.max(1, payload.intParam3() > 0 ? payload.intParam3() : 3);
+                int pointsToWin = Math.max(1, payload.intParam3() > 0 ? payload.intParam3() : 3);
+                boolean friendlyFire = (payload.intParam4() == 1);
 
                 Arena arena = ArenaManager.getAvailableArena(payload.param1(), teams);
                 if (arena == null) {
@@ -208,7 +221,7 @@ public class ModPackets {
                 }
 
                 Kit kit = KitManager.getKit(payload.param2());
-                LobbyManager.createLobby(player, arena, kit, teams, playersPerTeam, rounds);
+                LobbyManager.createLobby(player, arena, kit, teams, playersPerTeam, pointsToWin, friendlyFire);
             }
             case "LOBBY_JOIN" -> {
                 try {
@@ -316,9 +329,6 @@ public class ModPackets {
                         if (type == 99) {
                             a.setSpectatorSpawn(sp);
                             player.sendSystemMessage(Component.literal("§a[Setup] Spectator spawn set!"), false);
-                        } else if (type == 100) {
-                            a.setLobbySpawn(sp);
-                            player.sendSystemMessage(Component.literal("§a[Setup] Lobby spawn set!"), false);
                         } else {
                             a.addTeamSpawn(type, sp);
                             player.sendSystemMessage(Component.literal("§a[Setup] Spawn for Team " + type + " added!"), false);

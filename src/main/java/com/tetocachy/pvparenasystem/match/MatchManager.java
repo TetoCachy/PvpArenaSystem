@@ -14,12 +14,8 @@ public class MatchManager {
     private static final Map<UUID, UUID> playerToMatch = new ConcurrentHashMap<>();
     private static final Map<UUID, UUID> spectatorToMatch = new ConcurrentHashMap<>();
 
-    public static ArenaMatch createMatch(MinecraftServer server, Arena arena, Kit kit, int rounds, Map<Integer, List<UUID>> teamAssignments) {
-        return createMatch(server, arena, kit, rounds, teamAssignments, Collections.emptyList());
-    }
-
-    public static ArenaMatch createMatch(MinecraftServer server, Arena arena, Kit kit, int rounds, Map<Integer, List<UUID>> teamAssignments, List<UUID> spectators) {
-        ArenaMatch match = new ArenaMatch(server, arena, kit, rounds, teamAssignments, spectators);
+    public static ArenaMatch createMatch(MinecraftServer server, Arena arena, Kit kit, int pointsToWin, boolean friendlyFire, Map<Integer, List<UUID>> teamAssignments, List<UUID> spectators) {
+        ArenaMatch match = new ArenaMatch(server, arena, kit, pointsToWin, friendlyFire, teamAssignments, spectators);
         activeMatches.put(match.getMatchId(), match);
 
         for (List<UUID> list : teamAssignments.values()) {

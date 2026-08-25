@@ -26,7 +26,8 @@ public class ArenaMatch {
     private final MinecraftServer server;
     private final Arena arena;
     private final Kit kit;
-    private final int roundsToWin;
+    private final int pointsToWin;
+    private final boolean friendlyFire;
     private final Map<Integer, TeamData> teams = new HashMap<>();
     private final Set<UUID> allPlayers = new HashSet<>();
     private final Set<UUID> spectators = ConcurrentHashMap.newKeySet();
@@ -38,15 +39,12 @@ public class ArenaMatch {
     private int intermissionTimer = 0;
     private int currentRound = 1;
 
-    public ArenaMatch(MinecraftServer server, Arena arena, Kit kit, int roundsToWin, Map<Integer, List<UUID>> teamAssignments) {
-        this(server, arena, kit, roundsToWin, teamAssignments, Collections.emptyList());
-    }
-
-    public ArenaMatch(MinecraftServer server, Arena arena, Kit kit, int roundsToWin, Map<Integer, List<UUID>> teamAssignments, List<UUID> initialSpectators) {
+    public ArenaMatch(MinecraftServer server, Arena arena, Kit kit, int pointsToWin, boolean friendlyFire, Map<Integer, List<UUID>> teamAssignments, List<UUID> initialSpectators) {
         this.server = server;
         this.arena = arena;
         this.kit = kit;
-        this.roundsToWin = Math.max(1, roundsToWin);
+        this.pointsToWin = Math.max(1, pointsToWin);
+        this.friendlyFire = friendlyFire;
 
         if (initialSpectators != null) {
             this.spectators.addAll(initialSpectators);
@@ -145,11 +143,10 @@ public class ArenaMatch {
             }
         }
 
-        broadcast("§6[PvpArena] §eRound " + currentRound + " / " + (roundsToWin * 2 - 1) + " is starting!");
+        broadcast("§6[PvpArena] §eRound " + currentRound + " (First to " + pointsToWin + " Points) is starting!");
     }
 
     public void tick() {
-        // Void and spectator bounds
         for (UUID uuid : allPlayers) {
             ServerPlayer p = server.getPlayerList().getPlayer(uuid);
             if (p == null) continue;
@@ -236,6 +233,12 @@ public class ArenaMatch {
         }
     }
 
+    public boolean areOnSameTeam(UUID u1, UUID u2) {
+        TeamData t1 = getPlayerTeam(u1);
+        TeamData t2 = getPlayerTeam(u2);
+        return t1 != null && t2 != null && t1.getTeamIndex() == t2.getTeamIndex();
+    }
+
     public void handlePlayerDeath(ServerPlayer player) {
         UUID uuid = player.getUUID();
         TeamData playerTeam = getPlayerTeam(uuid);
@@ -278,12 +281,12 @@ public class ArenaMatch {
             if (survivingTeams.size() == 1) {
                 TeamData winner = survivingTeams.get(0);
                 winner.incrementScore();
-                broadcast("§6§l[Round Over] " + winner.getColor() + winner.getName() + " §awon Round " + currentRound + "! §7(Score: " + winner.getScore() + "/" + roundsToWin + ")");
+                broadcast("§6§l[Round Over] " + winner.getColor() + winner.getName() + " §awon Round " + currentRound + "! §7(Score: " + winner.getScore() + "/" + pointsToWin + ")");
 
-                if (winner.getScore() >= roundsToWin) {
+                if (winner.getScore() >= pointsToWin) {
                     state = MatchState.ENDING;
                     celebrationTimer = ArenaModConfig.CELEBRATION_SECONDS * 20;
-                    broadcastTitle("§6§lVICTORY!", winner.getColor() + winner.getName() + " won the match!");
+                    broadcastTitle("§6§lVICTORY!", winner.getColor() + winner.getName() + " won the match (" + winner.getScore() + " Points)!");
                     playSound(SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, 1.0F, 1.0F);
                     return;
                 }
@@ -387,7 +390,8 @@ public class ArenaMatch {
     public Arena getArena() { return arena; }
     public Kit getKit() { return kit; }
     public int getCurrentRound() { return currentRound; }
-    public int getRoundsToWin() { return roundsToWin; }
+    public int getPointsToWin() { return pointsToWin; }
+    public boolean isFriendlyFire() { return friendlyFire; }
     public Map<Integer, TeamData> getTeams() { return teams; }
     public Set<UUID> getSpectators() { return spectators; }
 }
