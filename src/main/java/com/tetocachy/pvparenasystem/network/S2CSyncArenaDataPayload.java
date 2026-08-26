@@ -13,6 +13,7 @@ import java.util.List;
 public record S2CSyncArenaDataPayload(
         boolean isAdmin,
         boolean inSetup,
+        boolean inMatch,
         String editingArenaId,
         BlockPos pos1,
         BlockPos pos2,
@@ -36,6 +37,7 @@ public record S2CSyncArenaDataPayload(
             String id,
             String displayName,
             int status,
+            int activeFights,
             int maxTeams,
             int maxPlayersPerTeam,
             int teamSpawnCount,
@@ -56,6 +58,7 @@ public record S2CSyncArenaDataPayload(
             (buf, p) -> {
                 buf.writeBoolean(p.isAdmin());
                 buf.writeBoolean(p.inSetup());
+                buf.writeBoolean(p.inMatch());
                 buf.writeUtf(p.editingArenaId() != null ? p.editingArenaId() : "");
 
                 buf.writeBoolean(p.pos1() != null);
@@ -81,6 +84,7 @@ public record S2CSyncArenaDataPayload(
                     buf.writeUtf(a.id());
                     buf.writeUtf(a.displayName());
                     buf.writeInt(a.status());
+                    buf.writeInt(a.activeFights());
                     buf.writeInt(a.maxTeams());
                     buf.writeInt(a.maxPlayersPerTeam());
                     buf.writeInt(a.teamSpawnCount());
@@ -145,6 +149,7 @@ public record S2CSyncArenaDataPayload(
             buf -> {
                 boolean isAdmin = buf.readBoolean();
                 boolean inSetup = buf.readBoolean();
+                boolean inMatch = buf.readBoolean();
                 String editingArenaId = buf.readUtf();
 
                 BlockPos p1 = buf.readBoolean() ? buf.readBlockPos() : null;
@@ -173,6 +178,7 @@ public record S2CSyncArenaDataPayload(
                     String aId = buf.readUtf();
                     String aName = buf.readUtf();
                     int status = buf.readInt();
+                    int activeFights = buf.readInt();
                     int maxTeams = buf.readInt();
                     int maxPpt = buf.readInt();
                     int teamSpawns = buf.readInt();
@@ -188,7 +194,7 @@ public record S2CSyncArenaDataPayload(
                         spawns.add(new SpawnPointData(buf.readInt(), buf.readDouble(), buf.readDouble(), buf.readDouble()));
                     }
 
-                    arenas.add(new ArenaInfo(aId, aName, status, maxTeams, maxPpt, teamSpawns, hasSpec, sx, sy, sz, borderShape, spawns));
+                    arenas.add(new ArenaInfo(aId, aName, status, activeFights, maxTeams, maxPpt, teamSpawns, hasSpec, sx, sy, sz, borderShape, spawns));
                 }
 
                 int lCount = buf.readInt();
@@ -241,7 +247,7 @@ public record S2CSyncArenaDataPayload(
                 List<Integer> gp = new ArrayList<>(gpSize);
                 for (int i = 0; i < gpSize; i++) gp.add(buf.readInt());
 
-                return new S2CSyncArenaDataPayload(isAdmin, inSetup, editingArenaId, p1, p2, players, kits, arenas, lobbies, currentLobby, party, pubParties, activeMatches, tc, ts, gp);
+                return new S2CSyncArenaDataPayload(isAdmin, inSetup, inMatch, editingArenaId, p1, p2, players, kits, arenas, lobbies, currentLobby, party, pubParties, activeMatches, tc, ts, gp);
             }
     );
 

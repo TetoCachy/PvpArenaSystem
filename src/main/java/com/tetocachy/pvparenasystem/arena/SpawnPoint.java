@@ -63,4 +63,7 @@ public class SpawnPoint {
     public double getX() { return x; }
     public double getY() { return y; }
     public double getZ() { return z; }
+    public float getYaw() { return yaw; }
+    public float getPitch() { return pitch; }
+    public ResourceKey<Level> getDimension() { return dimension; }
 }

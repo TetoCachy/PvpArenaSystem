@@ -22,7 +22,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ArenaManager {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Map<String, Arena> arenas = new ConcurrentHashMap<>();
-    private static int arenaOffsetIndex = 0;
+    private static final Set<Integer> occupiedSlots = ConcurrentHashMap.newKeySet();
+    private static int templateOffsetIndex = 0;
 
     private static Path getArenasDir(MinecraftServer server) {
         Path path = server.getWorldPath(LevelResource.ROOT).resolve("pvparenasystem").resolve("arenas");
@@ -33,6 +34,7 @@ public class ArenaManager {
 
     public static void loadArenas(MinecraftServer server) {
         arenas.clear();
+        occupiedSlots.clear();
         Path dir = getArenasDir(server);
         File[] files = dir.toFile().listFiles((d, name) -> name.endsWith(".json"));
         ServerLevel arenaLevel = ModDimensions.getArenaLevel(server);
@@ -73,10 +75,11 @@ public class ArenaManager {
         int sizeY = max.getY() - min.getY() + 1;
         int sizeZ = max.getZ() - min.getZ() + 1;
 
-        int targetOffsetX = arenaOffsetIndex * 500;
+        // Base Template origin in void
+        int targetOffsetX = templateOffsetIndex * 500;
         int targetOffsetY = 64;
         int targetOffsetZ = 0;
-        arenaOffsetIndex++;
+        templateOffsetIndex++;
 
         ServerLevel arenaLevel = ModDimensions.getArenaLevel(server);
         BlockPos targetMin = new BlockPos(targetOffsetX, targetOffsetY - 1, targetOffsetZ);
@@ -110,21 +113,45 @@ public class ArenaManager {
         return arena;
     }
 
-    public static Arena getArena(String id) {
-        return arenas.get(id.toLowerCase());
+    /**
+     * Allocates a dynamic instance copy of a blueprint arena.
+     */
+    public static synchronized Arena createMatchInstance(MinecraftServer server, Arena template) {
+        int slot = 100; // Instances start at X = 100,000+ to never collide with templates
+        while (occupiedSlots.contains(slot)) {
+            slot++;
+        }
+        occupiedSlots.add(slot);
+
+        ServerLevel level = ModDimensions.getArenaLevel(server);
+        return template.createInstance(slot, level);
     }
 
-    public static Arena getAvailableArena(String preferred) {
-        return getAvailableArena(preferred, 2);
+    public static synchronized void releaseInstance(ServerLevel level, Arena instance) {
+        if (instance != null) {
+            instance.cleanupInstance(level);
+            // Extract slot index from id: "<template>_inst_<slot>"
+            try {
+                String[] parts = instance.getId().split("_inst_");
+                if (parts.length > 1) {
+                    int slot = Integer.parseInt(parts[1]);
+                    occupiedSlots.remove(slot);
+                }
+            } catch (Exception ignored) {}
+        }
+    }
+
+    public static Arena getArena(String id) {
+        return arenas.get(id.toLowerCase());
     }
 
     public static Arena getAvailableArena(String preferred, int requiredTeams) {
         if (preferred != null && arenas.containsKey(preferred.toLowerCase())) {
             Arena a = arenas.get(preferred.toLowerCase());
-            if (!a.isInUse() && a.isConfigured() && a.supportsTeamCount(requiredTeams)) return a;
+            if (a.isConfigured() && a.supportsTeamCount(requiredTeams)) return a;
         }
         for (Arena a : arenas.values()) {
-            if (!a.isInUse() && a.isConfigured() && a.supportsTeamCount(requiredTeams)) return a;
+            if (a.isConfigured() && a.supportsTeamCount(requiredTeams)) return a;
         }
         return null;
     }

@@ -55,6 +55,7 @@ public class ModPackets {
 
         boolean isAdmin = server.getPlayerList().isOp(player.nameAndId());
         boolean inSetup = SetupSession.isInSetup(player.getUUID());
+        boolean inMatch = MatchManager.isInMatch(player.getUUID());
         Arena editingArena = SetupSession.getCurrentEditingArena(player.getUUID());
 
         List<String> players = new ArrayList<>();
@@ -70,7 +71,9 @@ public class ModPackets {
 
         List<S2CSyncArenaDataPayload.ArenaInfo> arenas = new ArrayList<>();
         for (Arena a : ArenaManager.getAllArenas()) {
-            int status = a.isInUse() ? 2 : (a.isConfigured() ? 1 : 0);
+            int status = a.isConfigured() ? 1 : 0;
+            int activeFights = MatchManager.getActiveFightsForArena(a.getId());
+
             int sx = Math.abs(a.getMaxPos().getX() - a.getMinPos().getX()) + 1;
             int sy = Math.abs(a.getMaxPos().getY() - a.getMinPos().getY()) + 1;
             int sz = Math.abs(a.getMaxPos().getZ() - a.getMinPos().getZ()) + 1;
@@ -87,7 +90,7 @@ public class ModPackets {
             }
 
             arenas.add(new S2CSyncArenaDataPayload.ArenaInfo(
-                    a.getId(), a.getDisplayName(), status,
+                    a.getId(), a.getDisplayName(), status, activeFights,
                     a.getMaxSupportedTeams(), a.getMaxPlayersPerTeam(), a.getMaxSupportedTeams(),
                     a.getSpectatorSpawn() != null, sx, sy, sz, shape, spawns
             ));
@@ -145,7 +148,7 @@ public class ModPackets {
         }
 
         S2CSyncArenaDataPayload sync = new S2CSyncArenaDataPayload(
-                isAdmin, inSetup, editingArena != null ? editingArena.getId() : "",
+                isAdmin, inSetup, inMatch, editingArena != null ? editingArena.getId() : "",
                 SelectionManager.getPos1(player.getUUID()), SelectionManager.getPos2(player.getUUID()),
                 players, kits, arenas, lobbies, currentLobbyInfo, partyInfo, pubParties, activeMatches,
                 ArenaModConfig.ALLOWED_TEAM_COUNTS, ArenaModConfig.ALLOWED_TEAM_SIZES, ArenaModConfig.ALLOWED_GOAL_POINTS
@@ -200,6 +203,11 @@ public class ModPackets {
             }
 
             case "LOBBY_CREATE" -> {
+                if (MatchManager.isInMatch(player.getUUID())) {
+                    player.sendSystemMessage(Component.literal("§c[!] You cannot create a lobby while in a match!"), false);
+                    return;
+                }
+
                 int teams = Math.max(2, payload.intParam1());
                 int playersPerTeam = Math.max(1, payload.intParam2());
                 int pointsToWin = Math.max(1, payload.intParam3() > 0 ? payload.intParam3() : 3);
@@ -213,8 +221,6 @@ public class ModPackets {
                             player.sendSystemMessage(Component.literal("§c[Lobby] Arena '" + specific.getDisplayName() + "' is not fully configured (needs team spawns and spectator spawn)!"), false);
                         } else if (!specific.supportsTeamCount(teams)) {
                             player.sendSystemMessage(Component.literal("§c[Lobby] Arena '" + specific.getDisplayName() + "' only supports up to " + specific.getMaxSupportedTeams() + " teams!"), false);
-                        } else if (specific.isInUse()) {
-                            player.sendSystemMessage(Component.literal("§c[Lobby] Arena '" + specific.getDisplayName() + "' is currently in use!"), false);
                         }
                         return;
                     }
@@ -224,6 +230,10 @@ public class ModPackets {
                 LobbyManager.createLobby(player, arena, kit, teams, playersPerTeam, pointsToWin, friendlyFire);
             }
             case "LOBBY_JOIN" -> {
+                if (MatchManager.isInMatch(player.getUUID())) {
+                    player.sendSystemMessage(Component.literal("§c[!] You cannot join a lobby while in a match!"), false);
+                    return;
+                }
                 try {
                     UUID lId = UUID.fromString(payload.param1());
                     LobbyManager.joinLobby(player, lId, Math.max(0, payload.intParam1()), server);

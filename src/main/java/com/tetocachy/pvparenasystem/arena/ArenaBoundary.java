@@ -29,14 +29,9 @@ public class ArenaBoundary {
     private double minY;
     private double maxY;
 
-    // Box bounds
     private double minX, minZ, maxX, maxZ;
-
-    // Cylinder bounds
     private double centerX, centerZ;
     private double radius = 30.0;
-
-    // Polygon bounds
     private final List<Point2D> polygonPoints = new ArrayList<>();
 
     public ArenaBoundary(BlockPos minPos, BlockPos maxPos) {
@@ -85,6 +80,25 @@ public class ArenaBoundary {
             }
         }
         return inside;
+    }
+
+    public ArenaBoundary createOffsetCopy(double dx, double dy, double dz, BlockPos newMin, BlockPos newMax) {
+        ArenaBoundary copy = new ArenaBoundary(newMin, newMax);
+        copy.setShape(this.shape);
+        copy.minY = this.minY + dy;
+        copy.maxY = this.maxY + dy;
+        copy.minX = this.minX + dx;
+        copy.maxX = this.maxX + dx;
+        copy.minZ = this.minZ + dz;
+        copy.maxZ = this.maxZ + dz;
+        copy.centerX = this.centerX + dx;
+        copy.centerZ = this.centerZ + dz;
+        copy.radius = this.radius;
+
+        for (Point2D p : this.polygonPoints) {
+            copy.addPolygonPoint(p.x + dx, p.z + dz);
+        }
+        return copy;
     }
 
     public void addPolygonPoint(double x, double z) {

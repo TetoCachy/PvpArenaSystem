@@ -1,6 +1,7 @@
 package com.tetocachy.pvparenasystem.match;
 
 import com.tetocachy.pvparenasystem.arena.Arena;
+import com.tetocachy.pvparenasystem.arena.ArenaManager;
 import com.tetocachy.pvparenasystem.arena.SpawnPoint;
 import com.tetocachy.pvparenasystem.config.ArenaModConfig;
 import com.tetocachy.pvparenasystem.dimension.ModDimensions;
@@ -24,7 +25,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ArenaMatch {
     private final UUID matchId = UUID.randomUUID();
     private final MinecraftServer server;
-    private final Arena arena;
+    private final Arena templateArena;
+    private final Arena instancedArena;
     private final Kit kit;
     private final int pointsToWin;
     private final boolean friendlyFire;
@@ -39,9 +41,10 @@ public class ArenaMatch {
     private int intermissionTimer = 0;
     private int currentRound = 1;
 
-    public ArenaMatch(MinecraftServer server, Arena arena, Kit kit, int pointsToWin, boolean friendlyFire, Map<Integer, List<UUID>> teamAssignments, List<UUID> initialSpectators) {
+    public ArenaMatch(MinecraftServer server, Arena templateArena, Arena instancedArena, Kit kit, int pointsToWin, boolean friendlyFire, Map<Integer, List<UUID>> teamAssignments, List<UUID> initialSpectators) {
         this.server = server;
-        this.arena = arena;
+        this.templateArena = templateArena;
+        this.instancedArena = instancedArena;
         this.kit = kit;
         this.pointsToWin = Math.max(1, pointsToWin);
         this.friendlyFire = friendlyFire;
@@ -62,8 +65,6 @@ public class ArenaMatch {
     }
 
     public void startMatch() {
-        arena.setInUse(true);
-
         for (UUID uuid : allPlayers) {
             ServerPlayer player = server.getPlayerList().getPlayer(uuid);
             if (player != null) {
@@ -78,7 +79,7 @@ public class ArenaMatch {
                 PlayerStateManager.saveSnapshot(sp, "MATCH_SPEC_" + matchId);
                 sp.setGameMode(GameType.SPECTATOR);
                 teleportToSpectatorSpawn(sp);
-                sp.sendSystemMessage(Component.literal("§a[PvpArena] You are spectating the match in §e" + arena.getDisplayName() + "§a!"), false);
+                sp.sendSystemMessage(Component.literal("§a[PvpArena] You are spectating the match in §e" + templateArena.getDisplayName() + "§a!"), false);
             }
         }
 
@@ -91,7 +92,7 @@ public class ArenaMatch {
         MatchManager.registerSpectator(player.getUUID(), matchId);
         player.setGameMode(GameType.SPECTATOR);
         teleportToSpectatorSpawn(player);
-        player.sendSystemMessage(Component.literal("§a[PvpArena] Joined as spectator in §e" + arena.getDisplayName() + "§a!"), false);
+        player.sendSystemMessage(Component.literal("§a[PvpArena] Joined as spectator in §e" + templateArena.getDisplayName() + "§a!"), false);
         broadcast("§7[Spectator] §e" + player.getScoreboardName() + " §7joined to watch.");
     }
 
@@ -109,7 +110,7 @@ public class ArenaMatch {
 
         for (TeamData team : teams.values()) {
             team.resetRound();
-            List<SpawnPoint> spawns = arena.getTeamSpawns(team.getTeamIndex());
+            List<SpawnPoint> spawns = instancedArena.getTeamSpawns(team.getTeamIndex());
             int spIndex = 0;
 
             for (UUID uuid : team.getMembers()) {
@@ -143,7 +144,8 @@ public class ArenaMatch {
             }
         }
 
-        broadcast("§6[PvpArena] §eRound " + currentRound + " (First to " + pointsToWin + " Points) is starting!");
+        String pUnit = pointsToWin == 1 ? "Pt" : "Pts";
+        broadcast("§6[PvpArena] §eRound " + currentRound + " (First to " + pointsToWin + " " + pUnit + ") is starting!");
     }
 
     public void tick() {
@@ -154,7 +156,7 @@ public class ArenaMatch {
             TeamData team = getPlayerTeam(uuid);
             boolean isAlive = team != null && team.isAlive(uuid);
 
-            if (arena.isBelowVoid(p.getY())) {
+            if (instancedArena.isBelowVoid(p.getY())) {
                 if (isAlive) {
                     handlePlayerDeath(p);
                 } else {
@@ -164,11 +166,11 @@ public class ArenaMatch {
             }
 
             if (isAlive && state == MatchState.IN_PROGRESS) {
-                if (!arena.isInsideBoundary(p.getX(), p.getY(), p.getZ())) {
-                    if (p.getY() < arena.getMinPos().getY()) {
+                if (!instancedArena.isInsideBoundary(p.getX(), p.getY(), p.getZ())) {
+                    if (p.getY() < instancedArena.getMinPos().getY()) {
                         handlePlayerDeath(p);
                     } else {
-                        Vec3 center = arena.getCenterVec();
+                        Vec3 center = instancedArena.getCenterVec();
                         Vec3 dir = center.subtract(p.position()).normalize().scale(0.6);
                         p.setDeltaMovement(dir.x, 0.25, dir.z);
                         p.hurtMarked = true;
@@ -177,7 +179,7 @@ public class ArenaMatch {
                     }
                 }
             } else if (!isAlive) {
-                if (p.getY() < -30 || p.distanceToSqr(arena.getCenterVec()) > 40000) {
+                if (p.getY() < -30 || p.distanceToSqr(instancedArena.getCenterVec()) > 40000) {
                     teleportToSpectatorSpawn(p);
                 }
             }
@@ -185,7 +187,7 @@ public class ArenaMatch {
 
         for (UUID uuid : spectators) {
             ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
-            if (sp != null && (sp.getY() < -30 || sp.distanceToSqr(arena.getCenterVec()) > 40000)) {
+            if (sp != null && (sp.getY() < -30 || sp.distanceToSqr(instancedArena.getCenterVec()) > 40000)) {
                 teleportToSpectatorSpawn(sp);
             }
         }
@@ -259,12 +261,12 @@ public class ArenaMatch {
     }
 
     public void teleportToSpectatorSpawn(ServerPlayer player) {
-        if (arena.getSpectatorSpawn() != null) {
-            arena.getSpectatorSpawn().teleport(player);
+        if (instancedArena.getSpectatorSpawn() != null) {
+            instancedArena.getSpectatorSpawn().teleport(player);
         } else {
-            Vec3 center = arena.getCenterVec();
+            Vec3 center = instancedArena.getCenterVec();
             ServerLevel level = ModDimensions.getArenaLevel(server);
-            player.teleportTo(level, center.x, arena.getMaxPos().getY() + 4.0, center.z, Set.of(), 0.0F, 0.0F, true);
+            player.teleportTo(level, center.x, instancedArena.getMaxPos().getY() + 4.0, center.z, Set.of(), 0.0F, 0.0F, true);
         }
         player.setDeltaMovement(0, 0, 0);
     }
@@ -278,15 +280,16 @@ public class ArenaMatch {
         }
 
         if (survivingTeams.size() <= 1) {
+            String pUnit = pointsToWin == 1 ? "Pt" : "Pts";
             if (survivingTeams.size() == 1) {
                 TeamData winner = survivingTeams.get(0);
                 winner.incrementScore();
-                broadcast("§6§l[Round Over] " + winner.getColor() + winner.getName() + " §awon Round " + currentRound + "! §7(Score: " + winner.getScore() + "/" + pointsToWin + ")");
+                broadcast("§6§l[Round Over] " + winner.getColor() + winner.getName() + " §awon Round " + currentRound + "! §7(Score: " + winner.getScore() + "/" + pointsToWin + " " + pUnit + ")");
 
                 if (winner.getScore() >= pointsToWin) {
                     state = MatchState.ENDING;
                     celebrationTimer = ArenaModConfig.CELEBRATION_SECONDS * 20;
-                    broadcastTitle("§6§lVICTORY!", winner.getColor() + winner.getName() + " won the match (" + winner.getScore() + " Points)!");
+                    broadcastTitle("§6§lVICTORY!", winner.getColor() + winner.getName() + " won the match (" + winner.getScore() + " " + pUnit + ")!");
                     playSound(SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, 1.0F, 1.0F);
                     return;
                 }
@@ -327,8 +330,7 @@ public class ArenaMatch {
         }
 
         ServerLevel arenaLevel = ModDimensions.getArenaLevel(server);
-        arena.rollbackMap(arenaLevel);
-        arena.setInUse(false);
+        ArenaManager.releaseInstance(arenaLevel, instancedArena);
 
         MatchManager.removeMatch(matchId);
     }
@@ -387,7 +389,8 @@ public class ArenaMatch {
 
     public MatchState getState() { return state; }
     public UUID getMatchId() { return matchId; }
-    public Arena getArena() { return arena; }
+    public Arena getArena() { return templateArena; }
+    public Arena getInstancedArena() { return instancedArena; }
     public Kit getKit() { return kit; }
     public int getCurrentRound() { return currentRound; }
     public int getPointsToWin() { return pointsToWin; }

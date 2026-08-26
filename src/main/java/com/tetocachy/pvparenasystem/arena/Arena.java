@@ -18,7 +18,6 @@ public class Arena {
     private int maxPlayersPerTeam = 1;
     private final Map<Integer, List<SpawnPoint>> teamSpawns = new HashMap<>();
     private SpawnPoint spectatorSpawn;
-    private boolean inUse = false;
     private ArenaBlockSnapshot blockSnapshot;
     private ArenaBoundary boundary;
 
@@ -93,6 +92,52 @@ public class Arena {
     public void rollbackMap(ServerLevel level) {
         if (blockSnapshot != null) {
             blockSnapshot.rollback(level);
+        }
+    }
+
+    /**
+     * Creates a fully isolated, translated in-world copy of this arena template for a match.
+     */
+    public Arena createInstance(int instanceSlot, ServerLevel arenaLevel) {
+        int offsetX = instanceSlot * 1000;
+        int diffX = offsetX - minPos.getX();
+
+        BlockPos instMin = new BlockPos(offsetX, minPos.getY(), minPos.getZ());
+        BlockPos instMax = new BlockPos(maxPos.getX() + diffX, maxPos.getY(), maxPos.getZ());
+
+        Arena inst = new Arena(id + "_inst_" + instanceSlot, displayName, instMin, instMax);
+        inst.setMaxTeams(this.maxTeams);
+        inst.setMaxPlayersPerTeam(this.maxPlayersPerTeam);
+
+        // Copy blocks from snapshot to instanced position
+        if (this.blockSnapshot != null) {
+            this.blockSnapshot.pasteToOffset(arenaLevel, diffX, 0, 0);
+            inst.captureMapSnapshot(arenaLevel);
+        }
+
+        // Translate team spawns
+        for (Map.Entry<Integer, List<SpawnPoint>> entry : this.teamSpawns.entrySet()) {
+            for (SpawnPoint sp : entry.getValue()) {
+                inst.addTeamSpawn(entry.getKey(), new SpawnPoint(sp.getX() + diffX, sp.getY(), sp.getZ(), sp.getYaw(), sp.getPitch(), arenaLevel.dimension()));
+            }
+        }
+
+        // Translate spectator spawn
+        if (this.spectatorSpawn != null) {
+            inst.setSpectatorSpawn(new SpawnPoint(this.spectatorSpawn.getX() + diffX, this.spectatorSpawn.getY(), this.spectatorSpawn.getZ(), this.spectatorSpawn.getYaw(), this.spectatorSpawn.getPitch(), arenaLevel.dimension()));
+        }
+
+        // Translate boundary
+        if (this.boundary != null) {
+            inst.setBoundary(this.boundary.createOffsetCopy(diffX, 0, 0, instMin, instMax));
+        }
+
+        return inst;
+    }
+
+    public void cleanupInstance(ServerLevel level) {
+        if (blockSnapshot != null) {
+            blockSnapshot.clearToAir(level);
         }
     }
 
@@ -177,8 +222,6 @@ public class Arena {
     public void setMaxPlayersPerTeam(int maxPlayersPerTeam) { this.maxPlayersPerTeam = Math.max(1, maxPlayersPerTeam); }
     public void setSpectatorSpawn(SpawnPoint sp) { this.spectatorSpawn = sp; }
     public SpawnPoint getSpectatorSpawn() { return spectatorSpawn; }
-    public boolean isInUse() { return inUse; }
-    public void setInUse(boolean inUse) { this.inUse = inUse; }
     public Map<Integer, List<SpawnPoint>> getAllTeamSpawns() { return teamSpawns; }
     public ArenaBoundary getBoundary() { return boundary; }
     public void setBoundary(ArenaBoundary boundary) { this.boundary = boundary; }

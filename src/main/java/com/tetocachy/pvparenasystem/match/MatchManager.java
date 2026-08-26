@@ -1,6 +1,7 @@
 package com.tetocachy.pvparenasystem.match;
 
 import com.tetocachy.pvparenasystem.arena.Arena;
+import com.tetocachy.pvparenasystem.arena.ArenaManager;
 import com.tetocachy.pvparenasystem.kit.Kit;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -14,8 +15,9 @@ public class MatchManager {
     private static final Map<UUID, UUID> playerToMatch = new ConcurrentHashMap<>();
     private static final Map<UUID, UUID> spectatorToMatch = new ConcurrentHashMap<>();
 
-    public static ArenaMatch createMatch(MinecraftServer server, Arena arena, Kit kit, int pointsToWin, boolean friendlyFire, Map<Integer, List<UUID>> teamAssignments, List<UUID> spectators) {
-        ArenaMatch match = new ArenaMatch(server, arena, kit, pointsToWin, friendlyFire, teamAssignments, spectators);
+    public static ArenaMatch createMatch(MinecraftServer server, Arena templateArena, Kit kit, int pointsToWin, boolean friendlyFire, Map<Integer, List<UUID>> teamAssignments, List<UUID> spectators) {
+        Arena instancedArena = ArenaManager.createMatchInstance(server, templateArena);
+        ArenaMatch match = new ArenaMatch(server, templateArena, instancedArena, kit, pointsToWin, friendlyFire, teamAssignments, spectators);
         activeMatches.put(match.getMatchId(), match);
 
         for (List<UUID> list : teamAssignments.values()) {
@@ -31,6 +33,16 @@ public class MatchManager {
 
         match.startMatch();
         return match;
+    }
+
+    public static int getActiveFightsForArena(String templateArenaId) {
+        int count = 0;
+        for (ArenaMatch match : activeMatches.values()) {
+            if (match.getArena().getId().equalsIgnoreCase(templateArenaId)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     public static void spectateMatch(ServerPlayer player, UUID matchId) {

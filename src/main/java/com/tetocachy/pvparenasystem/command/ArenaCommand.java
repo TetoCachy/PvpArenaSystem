@@ -11,6 +11,7 @@ import com.tetocachy.pvparenasystem.arena.ArenaBoundary;
 import com.tetocachy.pvparenasystem.arena.ArenaManager;
 import com.tetocachy.pvparenasystem.arena.SpawnPoint;
 import com.tetocachy.pvparenasystem.dimension.ModDimensions;
+import com.tetocachy.pvparenasystem.match.MatchManager;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
@@ -226,9 +227,11 @@ public class ArenaCommand {
                                 source.sendSystemMessage(Component.literal("§7No arenas created yet. Use /arena create <name> to make one."));
                             } else {
                                 for (Arena a : ArenaManager.getAllArenas()) {
-                                    String status = a.isInUse() ? "§c[IN USE]" : (a.isConfigured() ? "§a[READY]" : "§e[SETUP NEEDED]");
+                                    int active = MatchManager.getActiveFightsForArena(a.getId());
+                                    String status = a.isConfigured() ? "§a[READY]" : "§e[SETUP NEEDED]";
+                                    String activeText = active > 0 ? " §6(" + active + " Active Fights)" : "";
                                     String teams = a.isConfigured() ? "§7(2-" + a.getMaxSupportedTeams() + " Teams)" : "§c(Incomplete)";
-                                    source.sendSystemMessage(Component.literal("§f- §e" + a.getDisplayName() + " " + status + " " + teams));
+                                    source.sendSystemMessage(Component.literal("§f- §e" + a.getDisplayName() + " " + status + activeText + " " + teams));
                                 }
                             }
                             return 1;
@@ -272,7 +275,8 @@ public class ArenaCommand {
         int sx = Math.abs(a.getMaxPos().getX() - a.getMinPos().getX()) + 1;
         int sy = Math.abs(a.getMaxPos().getY() - a.getMinPos().getY()) + 1;
         int sz = Math.abs(a.getMaxPos().getZ() - a.getMinPos().getZ()) + 1;
-        String status = a.isInUse() ? "§cIn Use" : (a.isConfigured() ? "§aReady" : "§eSetup Needed");
+        int active = MatchManager.getActiveFightsForArena(a.getId());
+        String status = a.isConfigured() ? "§aReady §7(" + active + " Active Fights)" : "§eSetup Needed";
 
         source.sendSystemMessage(Component.literal("§6§l=== Arena Details: §e" + a.getDisplayName() + " §6§l==="));
         source.sendSystemMessage(Component.literal("§7ID: §f" + a.getId() + " §7| Status: " + status));

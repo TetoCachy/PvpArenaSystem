@@ -56,8 +56,12 @@ public class ArenasTab implements ArenaScreenTab {
             graphics.fill(contentX + 4, cardY, contentX + contentW - 4, cardY + cardH, bgColor);
             graphics.outline(contentX + 4, cardY, contentW - 8, cardH, borderColor);
 
-            String statusBadge = a.status() == 2 ? "§c[IN USE]" : (a.status() == 1 ? "§a[READY]" : "§e[SETUP NEEDED]");
-            graphics.text(Minecraft.getInstance().font, Component.literal("§f" + a.displayName() + " " + statusBadge), contentX + 8, cardY + 4, 0xFFFFFFFF, false);
+            String statusBadge = a.status() == 1 ? "§a[READY]" : "§e[SETUP NEEDED]";
+            String activeFightsText = a.activeFights() > 0
+                    ? "§6⚔ " + a.activeFights() + (a.activeFights() == 1 ? " Active Fight" : " Active Fights")
+                    : "§70 Active Fights";
+
+            graphics.text(Minecraft.getInstance().font, Component.literal("§f" + a.displayName() + " " + statusBadge + "  " + activeFightsText), contentX + 8, cardY + 4, 0xFFFFFFFF, false);
 
             String teamInfo = a.teamSpawnCount() >= 2
                     ? "§7Supports: §b2 to " + a.teamSpawnCount() + " Teams §7(Up to " + a.maxPlayersPerTeam() + "/team)"
@@ -68,14 +72,13 @@ public class ArenasTab implements ArenaScreenTab {
             if (cardY > contentY + contentH - 28) break;
         }
 
-        // Render Hover Tooltip
         if (hoveredArena != null) {
             List<Component> tooltip = new ArrayList<>();
             tooltip.add(Component.literal("§6§l" + hoveredArena.displayName()));
             tooltip.add(Component.literal("§7ID: §f" + hoveredArena.id()));
-            tooltip.add(Component.literal("§7Status: " + (hoveredArena.status() == 2 ? "§cIn Match" : (hoveredArena.status() == 1 ? "§aReady for Duels" : "§eIn Setup"))));
+            tooltip.add(Component.literal("§7Status: " + (hoveredArena.status() == 1 ? "§aReady" : "§eIn Setup")));
+            tooltip.add(Component.literal("§7Active Fights: §e" + hoveredArena.activeFights() + " undergoing"));
             tooltip.add(Component.literal("§7Team Capacity: §b" + (hoveredArena.teamSpawnCount() >= 2 ? "2 - " + hoveredArena.teamSpawnCount() + " Teams" : "§cIncomplete")));
-            tooltip.add(Component.literal("§7Max Capacity: §f" + (hoveredArena.teamSpawnCount() * hoveredArena.maxPlayersPerTeam()) + " Players"));
             tooltip.add(Component.literal("§7Dimensions: §e" + hoveredArena.sizeX() + "x" + hoveredArena.sizeY() + "x" + hoveredArena.sizeZ() + " blocks"));
             tooltip.add(Component.literal("§7Spectator Spawn: " + (hoveredArena.hasSpectatorSpawn() ? "§a✔ Configured" : "§c✖ Missing")));
             tooltip.add(Component.literal("§7Border Shape: §f" + hoveredArena.borderShape()));

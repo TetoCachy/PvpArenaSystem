@@ -29,8 +29,23 @@ public class ArenaBlockSnapshot {
         }
     }
 
+    public void pasteToOffset(ServerLevel level, int offsetX, int offsetY, int offsetZ) {
+        for (Map.Entry<BlockPos, BlockState> entry : blockMap.entrySet()) {
+            BlockPos dest = entry.getKey().offset(offsetX, offsetY, offsetZ);
+            level.setBlock(dest, entry.getValue(), 2);
+        }
+    }
+
+    public void clearToAir(ServerLevel level) {
+        for (BlockPos pos : BlockPos.betweenClosed(minPos, maxPos)) {
+            if (!level.getBlockState(pos).isAir()) {
+                level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2);
+            }
+        }
+        clearEntities(level);
+    }
+
     public void rollback(ServerLevel level) {
-        // 1. Reset blocks
         for (BlockPos pos : BlockPos.betweenClosed(minPos, maxPos)) {
             BlockState originalState = blockMap.getOrDefault(pos, Blocks.AIR.defaultBlockState());
             BlockState currentState = level.getBlockState(pos);
@@ -38,14 +53,14 @@ public class ArenaBlockSnapshot {
                 level.setBlock(pos, originalState, 3);
             }
         }
+        clearEntities(level);
+    }
 
-        // 2. Clear dropped items and projectiles inside arena bounds
-        AABB box = new AABB(minPos.getX(), minPos.getY(), minPos.getZ(),
-                maxPos.getX() + 1, maxPos.getY() + 1, maxPos.getZ() + 1);
-        for (Entity entity : level.getEntities(null, box)) {
-            if (entity instanceof ItemEntity || entity instanceof Projectile) {
-                entity.discard();
-            }
+    private void clearEntities(ServerLevel level) {
+        AABB box = new AABB(minPos.getX() - 5, minPos.getY() - 10, minPos.getZ() - 5,
+                maxPos.getX() + 6, maxPos.getY() + 30, maxPos.getZ() + 6);
+        for (Entity entity : level.getEntities((Entity) null, box, e -> e instanceof ItemEntity || e instanceof Projectile)) {
+            entity.discard();
         }
     }
 }
